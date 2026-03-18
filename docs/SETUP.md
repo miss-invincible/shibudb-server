@@ -70,7 +70,7 @@ sudo rpm -i shibudb-{version}-1.aarch64.rpm
 If you prefer using Homebrew on macOS, you can install ShibuDb directly from our tap:
 
 ```bash
-brew tap shibudb.org/shibudb-server
+brew tap shibudb.org/shibudb
 
 # Install ShibuDb
 brew install shibudb
@@ -86,9 +86,9 @@ brew link shibudb
 
 ```bash
 ShibuDb automatically creates the following directory structure:
-/usr/local/var/lib/shibudb/     # Database files
-/usr/local/var/log/shibudb.log  # Log file
-/usr/local/var/run/shibudb.pid  # PID file
+~/.shibudb/lib/shibudb/     # Database files
+~/.shibudb/log/shibudb.log  # Log file
+~/.shibudb/run/shibudb.pid  # PID file
 ```
 
 ### 1. Configure Connection Limits
@@ -97,7 +97,7 @@ By default, ShibuDb allows up to 1000 concurrent connections. You can modify thi
 
 ```bash
 # Start with custom connection limit
-sudo shibudb start 9090 2000
+shibudb start 9090 2000
 
 # Or update at runtime
 shibudb manager 9090 limit 2000
@@ -108,8 +108,11 @@ shibudb manager 9090 limit 2000
 ### 1. Start the Server
 
 ```bash
-# Start with default settings (port 9090, 1000 connections)
-sudo shibudb start 9090
+# Start with default settings (port 9090, 1000 connections), first time start will ask for new admin credentials
+shibudb start 9090
+
+#starting shibudb first time with admin credentials.
+shibudb start --admin-user admin --admin-password admin 9090
 
 # Start with custom connection limit
 # if server is started for first time, it will ask for new admin credentials
@@ -119,14 +122,17 @@ sudo shibudb start 9090 500
 ### 2. Connect to the Database
 
 ```bash
-# Connect to the server
+# Connect to the server, this will prompt for username and password
 shibudb connect 9090
-```
-
 You'll be prompted for credentials:
 ```
 Username: {admin username}
 Password: {admin password}
+```
+
+```bash
+# Connect to the server with credentials
+shibudb connect --admin-user admin --admin-password admin 9090
 ```
 
 ### 3. Create Your First Space
