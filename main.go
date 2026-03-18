@@ -41,7 +41,13 @@ import (
 )
 
 type runtimePaths struct {
-	dataDir  string
+	// rootDir is the value passed via --data-dir (defaults to ~/.shibudb or XDG).
+	// We store actual runtime artifacts under rootDir/{lib,log,run}.
+	rootDir string
+	libDir  string
+	logDir  string
+	runDir  string
+
 	authFile string
 	logFile  string
 	pidFile  string
@@ -60,12 +66,20 @@ func defaultDataDir() string {
 	return ".shibudb"
 }
 
-func newRuntimePaths(dataDir string) runtimePaths {
+func newRuntimePaths(rootDir string) runtimePaths {
+	libDir := filepath.Join(rootDir, "lib")
+	logDir := filepath.Join(rootDir, "log")
+	runDir := filepath.Join(rootDir, "run")
 	return runtimePaths{
-		dataDir:  dataDir,
-		authFile: filepath.Join(dataDir, "users.json"),
-		logFile:  filepath.Join(dataDir, "shibudb.log"),
-		pidFile:  filepath.Join(dataDir, "shibudb.pid"),
+		rootDir: rootDir,
+		libDir:  libDir,
+		logDir:  logDir,
+		runDir:  runDir,
+
+		// Store config + data under lib/, logs under log/, pid under run/
+		authFile: filepath.Join(libDir, "users.json"),
+		logFile:  filepath.Join(logDir, "shibudb.log"),
+		pidFile:  filepath.Join(runDir, "shibudb.pid"),
 	}
 }
 
@@ -130,7 +144,7 @@ func main() {
 
 	case "start":
 		fs := flag.NewFlagSet("start", flag.ExitOnError)
-		dataDir := fs.String("data-dir", defaultDataDir(), "data directory for auth and storage files")
+		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root (stores files under lib/, log/, run/)")
 		adminUser := fs.String("admin-user", "", "admin username for initial bootstrap (non-interactive)")
 		adminPass := fs.String("admin-password", "", "admin password for initial bootstrap (non-interactive)")
 		fs.Parse(os.Args[2:]) //nolint
@@ -153,13 +167,13 @@ func main() {
 
 	case "stop":
 		fs := flag.NewFlagSet("stop", flag.ExitOnError)
-		dataDir := fs.String("data-dir", defaultDataDir(), "data directory (used to locate the PID file)")
+		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root (used to locate the PID file under run/)")
 		fs.Parse(os.Args[2:]) //nolint
 		stopServer(newRuntimePaths(*dataDir))
 
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
-		dataDir := fs.String("data-dir", defaultDataDir(), "data directory for auth and storage files")
+		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root (stores files under lib/, log/, run/)")
 		adminUser := fs.String("admin-user", "", "admin username for initial bootstrap (non-interactive)")
 		adminPass := fs.String("admin-password", "", "admin password for initial bootstrap (non-interactive)")
 		fs.Parse(os.Args[2:]) //nolint
@@ -185,7 +199,7 @@ func main() {
 				log.Fatalf("Failed to bootstrap admin: %v", err)
 			}
 		}
-		server.StartServer(args[0], paths.authFile, maxConnections, paths.dataDir)
+		server.StartServer(args[0], paths.authFile, maxConnections, paths.libDir)
 
 	case "connect":
 		fs := flag.NewFlagSet("connect", flag.ExitOnError)
@@ -741,7 +755,7 @@ func startServer(port string, maxConnections int32, paths runtimePaths, adminUse
 	printStartupBanner()
 
 	// Build command: pass --data-dir and any bootstrap credentials to the forked run process
-	cmdArgs := []string{"run", "--data-dir", paths.dataDir}
+	cmdArgs := []string{"run", "--data-dir", paths.rootDir}
 	if adminUser != "" {
 		cmdArgs = append(cmdArgs, "--admin-user", adminUser, "--admin-password", adminPass)
 	}
@@ -790,7 +804,7 @@ func startServer(port string, maxConnections int32, paths runtimePaths, adminUse
 
 	fmt.Printf("%sShibuDB started on port %s (PID: %d, max connections: %d)%s\n", green, port, cmd.Process.Pid, maxConnections, reset)
 
-	if persistedLimit, err := server.LoadConnectionLimit(paths.dataDir); err == nil && persistedLimit != maxConnections {
+	if persistedLimit, err := server.LoadConnectionLimit(paths.libDir); err == nil && persistedLimit != maxConnections {
 		fmt.Printf("%sNote: Server will use persisted connection limit: %d%s\n", yellow, persistedLimit, reset)
 	} else {
 		fmt.Printf("%sNote: Server may use persisted connection limit if available%s\n", yellow, reset)
@@ -1142,7 +1156,6 @@ func resetManagerLimit(baseURL string) {
 		fmt.Printf("Error: %s\n", result["error"])
 	}
 }
-
 
 func openLogFile(logFilePath string) *os.File {
 	logDir := filepath.Dir(logFilePath)

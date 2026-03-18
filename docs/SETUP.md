@@ -86,7 +86,7 @@ brew link shibudb
 
 ```bash
 ShibuDb automatically creates the following directory structure:
-~/.shibudb/lib/shibudb/     # Database files
+~/.shibudb/lib/             # Database + config files
 ~/.shibudb/log/shibudb.log  # Log file
 ~/.shibudb/run/shibudb.pid  # PID file
 ```
@@ -172,7 +172,7 @@ RANGE-SEARCH 1.0,2.0,3.0,4.0 0.5
 ps aux | grep shibudb
 
 # Check server logs
-tail -f /usr/local/var/log/shibudb.log
+tail -f ~/.shibudb/log/shibudb.log
 ```
 
 ### 2. Test Connection
@@ -220,9 +220,7 @@ sudo chown -R root:root /usr/local/bin/shibudb
 sudo chmod +x /usr/local/bin/shibudb
 
 # Create required directories with proper permissions if not created
-sudo mkdir -p /usr/local/var/lib/shibudb
-sudo mkdir -p /usr/local/var/log
-sudo mkdir -p /usr/local/var/run
+mkdir -p ~/.shibudb/lib ~/.shibudb/log ~/.shibudb/run
 ```
 
 #### 2. Port Already in Use
@@ -273,7 +271,7 @@ sudo ufw allow 10090
 **Solution**:
 ```bash
 # Reset admin password by recreating users file
-sudo rm /usr/local/var/lib/shibudb/users.json
+rm ~/.shibudb/lib/users.json
 sudo shibudb start 9090
 # Default credentials will be recreated: admin/admin
 ```
@@ -284,13 +282,13 @@ sudo shibudb start 9090
 
 ```bash
 # View recent logs
-tail -n 100 /usr/local/var/log/shibudb.log
+tail -n 100 ~/.shibudb/log/shibudb.log
 
 # Search for errors
-grep -i error /usr/local/var/log/shibudb.log
+grep -i error ~/.shibudb/log/shibudb.log
 
 # Monitor logs in real-time
-tail -f /usr/local/var/log/shibudb.log
+tail -f ~/.shibudb/log/shibudb.log
 ```
 
 #### Common Log Messages
@@ -322,7 +320,7 @@ shibudb manager 9090 stats
 
 ```bash
 # Check database size
-du -sh /usr/local/var/lib/shibudb/
+du -sh ~/.shibudb/lib/
 
 # Monitor disk usage
 df -h
