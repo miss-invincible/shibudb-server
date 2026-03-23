@@ -35,10 +35,6 @@ make start-local-server
 # Connect to database on default 4444 port
 make connect-local-client
 
-# Login with default credentials
-Username: admin
-Password: admin
-
 # Create your first space with engine type key-value
 CREATE-SPACE my_data --engine key-value
 
@@ -91,27 +87,14 @@ ShibuDb follows a modular architecture with clear separation of concerns:
 ### Build and Test
 
 ```bash
-# Build for current platform
-make build
-
 # Run tests
 make test
 
 # Run benchmarks
 make benchmark
 
-# Run E2E tests
+# Run E2E tests, this requires test server (make start-local-server)
 make e2e-test
-```
-
-### Development Setup
-
-```bash
-# Setup development environment
-make dev-setup
-
-# Run all pre-commit checks
-make pre-commit
 ```
 
 ### Local Development
@@ -124,9 +107,6 @@ make start-local-server
 
 # Connect to the local server using the CLI client
 make connect-local-client
-
-# Interactive development setup (recommended)
-make dev
 ```
 
 **Default credentials for local development:**
@@ -141,6 +121,7 @@ make dev
 - `get <key>` - Retrieve a value by key
 - `delete <key>` - Delete a key-value pair
 - `insert-vector <id> <comma-separated-floats>` - Insert a vector
+- `delete-vector <id>` - Delete a vector (Not supported for index type HNSW)
 - `search-topk <comma-separated-floats> <k>` - Search for top-k similar vectors
 - `create-user` - Create a new user (admin only)
 - `list-spaces` - List all available spaces
@@ -167,12 +148,17 @@ make connect-local-client
 
 ## 📦 Installation Options
 
-### From Source
+### From brew
+f you prefer using Homebrew on macOS, you can install ShibuDb directly from our tap:
+
 ```bash
-git clone https://github.com/shibudb.org/shibudb-server.git
-cd ShibuDb
-make build
-sudo make install
+brew tap shibudb.org/shibudb
+
+# Install ShibuDb
+brew install shibudb
+
+# If you already have an older version installed, you can upgrade
+brew link shibudb
 ```
 
 ### From Pre-built Packages
@@ -198,13 +184,6 @@ sudo rpm -i shibudb-{version}-1.x86_64.rpm
 
 # ARM64
 sudo rpm -i shibudb-{version}-1.aarch64.rpm
-```
-
-### Using Docker
-```bash
-# Build and run
-docker build -t shibudb:latest .
-docker run -d --name shibudb -p 8080:8080 -p 9080:9080 shibudb:latest
 ```
 
 ## 🎯 Use Cases
@@ -242,6 +221,7 @@ sudo shibudb stop
 
 # Check status (default management port 5444)
 shibudb manager status
+hibudb manager --port 19090 status
 ```
 
 ### Runtime Management

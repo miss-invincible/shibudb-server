@@ -77,12 +77,13 @@ brew install shibudb
 
 # If you already have an older version installed, you can upgrade
 brew link shibudb
+```
 
 
 ## Initial Configuration
 
 ### 1. Create Required Directories
-```
+
 
 ```bash
 ShibuDb automatically creates the following directory structure:
@@ -133,7 +134,6 @@ sudo shibudb start --max-connections 500 --port 9090
 # Connect to the server (default main port 4444; use --port when different)
 shibudb connect
 You'll be prompted for credentials:
-```
 Username: {admin username}
 Password: {admin password}
 ```
@@ -209,7 +209,7 @@ curl http://localhost:5444/limit
 # Run unit tests
 make test
 
-# Run E2E tests (requires server running on port 4444 with admin credentials as admin:admin)
+# Run E2E tests (requires server running on port 4444 with admin credentials as admin:admin, can be started make start-local-server)
 make e2e-test
 ```
 

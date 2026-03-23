@@ -111,10 +111,6 @@ e2e-test: ## Run end-to-end tests. to run E2E test cases install shibudb on loca
 		./scripts/test_with_rpath.sh ./E2ETests/; \
 	fi
 
-vet: ## Run go vet
-	@echo "Running go vet..."
-	go vet ./...
-
 # Cleanup targets
 clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."
@@ -144,52 +140,21 @@ start-local-server: ## Run ShibuDB server in foreground (port 4444, admin/admin)
 	@chmod +x scripts/start-local-server.sh
 	@./scripts/start-local-server.sh
 
-dev-server-smoke: ## Build/run cmd/server test binary harness (not a long-running server)
-	@echo "Running dev-server test harness..."
-	go run cmd/dev_server/main.go
-
 connect-local-client: ## Connect to local development server using CLI client
 	@echo "Connecting to local development server..."
 	@echo "Default credentials: admin/admin"
 	@echo "Note: shibudb CLI default listen port is 4444; dev/E2E test server also uses 4444"
 	./scripts/connect-client.sh 4444
 
-# Docker targets
-docker-build: ## Build Docker image
-	@echo "Building Docker image..."
-	docker build -t shibudb:$(VERSION) .
-	docker tag shibudb:$(VERSION) shibudb:latest
-
-docker-run: ## Run ShibuDb in Docker
-	@echo "Running ShibuDb in Docker..."
-	docker run -it --rm -p 8080:8080 -p 9080:9080 shibudb:latest
-
 # Version management
 version: ## Show current version
 	@echo "Current version: $(VERSION)"
-
-update-version: ## Update version (usage: make update-version VERSION=1.0.0)
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Usage: make update-version VERSION=x.y.z"; \
-		exit 1; \
-	fi
-	@echo "Updating version to $(VERSION)..."
-	./scripts/update_version.sh $(VERSION)
 
 # Database files cleanup
 clean-db: ## Clean database files
 	@echo "Cleaning database files..."
 	rm -f *.db *.dat *.faiss
 	@echo "Database files cleaned."
-
-# Linux dependency check
-check-deps: ## Check Linux dependencies
-	@echo "Checking Linux dependencies..."
-	@if [ "$(shell uname -s)" = "Linux" ]; then \
-		./scripts/check_linux_deps.sh; \
-	else \
-		echo "This command is only available on Linux"; \
-	fi
 
 # Test FAISS paths
 test-paths: ## Test FAISS paths and environment
