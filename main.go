@@ -183,6 +183,48 @@ func main() {
 		fs.Parse(os.Args[2:]) //nolint
 		stopServer(newRuntimePaths(*dataDir))
 
+	case "run":
+		fs := flag.NewFlagSet("run", flag.ExitOnError)
+		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root (stores files under lib/, log/, run/)")
+		adminUser := fs.String("admin-user", "", "admin username for initial bootstrap (non-interactive)")
+		adminPass := fs.String("admin-password", "", "admin password for initial bootstrap (non-interactive)")
+		portFlag := fs.String("port", server.DefaultPort, "TCP port for client connections (1–65535)")
+		mgmtPortFlag := fs.String("management-port", server.DefaultManagementPort, "TCP port for the management HTTP API (1–65535; must differ from --port)")
+		maxConnFlag := fs.Int("max-connections", int(resolveDefaultMaxConnections()), "maximum number of concurrent connections (default comes from SHIBUDB_MAX_CONNECTIONS if set; persisted limit may override at runtime)")
+		fs.Parse(os.Args[2:]) //nolint
+		if len(fs.Args()) != 0 {
+			fmt.Println("Usage: shibudb run [--data-dir <path>] [--admin-user <u> --admin-password <p>] [--port <n>] [--management-port <n>] [--max-connections <n>]")
+			return
+		}
+		port, err := normalizeListenPort(*portFlag)
+		if err != nil {
+			fmt.Println("Invalid --port:", err)
+			return
+		}
+		mgmtPort, err := normalizeListenPort(*mgmtPortFlag)
+		if err != nil {
+			fmt.Println("Invalid --management-port:", err)
+			return
+		}
+		if port == mgmtPort {
+			fmt.Println("Error: --port and --management-port must be different.")
+			return
+		}
+		maxConnections := int32(*maxConnFlag)
+		if maxConnections <= 0 {
+			fmt.Println("Invalid --max-connections value. Must be a positive integer.")
+			return
+		}
+		paths := newRuntimePaths(*dataDir)
+		// Pre-bootstrap admin non-interactively if credentials are provided.
+		// This ensures the auth file exists before StartServer's own NewAuthManager call.
+		if *adminUser != "" && *adminPass != "" {
+			if _, err := auth.NewAuthManagerWithBootstrap(paths.authFile, *adminUser, *adminPass); err != nil {
+				log.Fatalf("Failed to bootstrap admin: %v", err)
+			}
+		}
+		server.StartServer(port, paths.authFile, maxConnections, paths.libDir, mgmtPort)
+
 	case "connect":
 		fs := flag.NewFlagSet("connect", flag.ExitOnError)
 		portFlag := fs.String("port", server.DefaultPort, "TCP port of the ShibuDB server (1–65535)")
@@ -275,6 +317,7 @@ func printHelp() {
 	fmt.Printf(`ShibuDB - Lightweight Database
 Usage:
   shibudb start [flags]                        Start the ShibuDB server as a background process
+  shibudb run [flags]                          Run server in foreground (internal; used by start)
   shibudb stop                                 Stop the ShibuDB background server
   shibudb connect [flags]                      Connect to the ShibuDB CLI client
   shibudb manager [flags] <command>            Manage connection limits at runtime
