@@ -4,21 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
+
+	"github.com/shibudb.org/shibudb-server/internal/auth"
 )
 
 // ManagementServer provides HTTP endpoints for runtime server management
 type ManagementServer struct {
 	connManager *ConnectionManager
+	tokenMgr    *auth.TokenManager
 	port        string
 	server      *http.Server
 	mu          sync.RWMutex
 }
 
 // NewManagementServer creates a new management server
-func NewManagementServer(connManager *ConnectionManager, port string) *ManagementServer {
-	ms := &ManagementServer{
+func NewManagementServer(connManager *ConnectionManager, tokenMgr *auth.TokenManager, port string) *ManagementServer {	ms := &ManagementServer{
 		connManager: connManager,
+		tokenMgr:    tokenMgr,
 		port:        port,
 	}
 
@@ -50,6 +54,9 @@ func (ms *ManagementServer) Stop() error {
 
 // healthHandler returns server health status
 func (ms *ManagementServer) healthHandler(w http.ResponseWriter, r *http.Request) {
+    if !ms.authorizeRequest(w, r) {
+        return
+    }
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -66,6 +73,9 @@ func (ms *ManagementServer) healthHandler(w http.ResponseWriter, r *http.Request
 
 // statsHandler returns connection statistics
 func (ms *ManagementServer) statsHandler(w http.ResponseWriter, r *http.Request) {
+    if !ms.authorizeRequest(w, r) {
+    		return
+    }
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -79,6 +89,9 @@ func (ms *ManagementServer) statsHandler(w http.ResponseWriter, r *http.Request)
 
 // limitHandler handles GET (current limit) and PUT (update limit) requests
 func (ms *ManagementServer) limitHandler(w http.ResponseWriter, r *http.Request) {
+    if !ms.authorizeRequest(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 
 	switch r.Method {
@@ -125,6 +138,9 @@ func (ms *ManagementServer) limitHandler(w http.ResponseWriter, r *http.Request)
 
 // increaseLimitHandler increases the connection limit by a specified amount
 func (ms *ManagementServer) increaseLimitHandler(w http.ResponseWriter, r *http.Request) {
+    if !ms.authorizeRequest(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -166,6 +182,9 @@ func (ms *ManagementServer) increaseLimitHandler(w http.ResponseWriter, r *http.
 
 // decreaseLimitHandler decreases the connection limit by a specified amount
 func (ms *ManagementServer) decreaseLimitHandler(w http.ResponseWriter, r *http.Request) {
+    if !ms.authorizeRequest(w, r) {
+    		return
+    }
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -218,4 +237,19 @@ func (ms *ManagementServer) decreaseLimitHandler(w http.ResponseWriter, r *http.
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (ms *ManagementServer) authorizeRequest(w http.ResponseWriter, r *http.Request) bool {
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return false
+	}
+
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	if token == "" || !ms.tokenMgr.ValidateToken(token) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
 }

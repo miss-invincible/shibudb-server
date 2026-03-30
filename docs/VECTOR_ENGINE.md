@@ -1058,7 +1058,7 @@ ls -la /usr/local/var/lib/shibudb/
 tail -f /usr/local/var/log/shibudb.log | grep -E "(slow|performance|timeout)"
 
 # Check connection usage
-shibudb manager stats
+shibudb manager --username admin --password admin stats
 ```
 
 ### Data Recovery

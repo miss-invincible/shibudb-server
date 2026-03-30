@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -196,6 +197,10 @@ func StartServer(port string, authFilePath string, maxConnections int32, dataFol
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize auth: %v", err))
 	}
+	tokenManager, err := auth.NewTokenManager(filepath.Join(dataFolderPath, "management_tokens.json"))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize token manager: %v", err))
+	}
 
 	// Load persistent connection limit if available
 	persistentLimit := GetPersistentLimit(dataFolderPath, maxConnections)
@@ -222,7 +227,7 @@ func StartServer(port string, authFilePath string, maxConnections int32, dataFol
 	// Start signal handler for runtime limit updates
 	go handleSignals(connManager)
 
-	managementServer := NewManagementServer(connManager, managementPort)
+	managementServer := NewManagementServer(connManager, tokenManager, managementPort)
 	go func() {
 		fmt.Printf("Starting management server on port %s...\n", managementPort)
 		if err := managementServer.Start(); err != nil {
@@ -242,7 +247,7 @@ func StartServer(port string, authFilePath string, maxConnections int32, dataFol
 	fmt.Printf("ShibuDB server started on port %s (max connections: %d)\n", port, actualLimit)
 	fmt.Printf("Management server started on port %s\n", managementPort)
 	fmt.Printf("Runtime limit updates: SIGUSR1 (increase by 100), SIGUSR2 (decrease by 100)\n")
-	fmt.Printf("HTTP management: GET/PUT http://localhost:%s/limit\n", managementPort)
+	fmt.Printf("HTTP management: GET/PUT http://localhost:%s/limit (Authorization: Bearer <token> required)\n", managementPort)
 
 	// Show persistence status if different from default
 	if actualLimit != maxConnections {

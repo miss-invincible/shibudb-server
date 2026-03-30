@@ -219,6 +219,11 @@ sudo shibudb start --port 9090 --management-port 19090
 # Stop server
 sudo shibudb stop
 
+shibudb manager --username admin --password admin generate-token
+
+# Check status (admin-only; default management port 5444)
+shibudb manager --username admin --password admin status
+shibudb manager --port 19090 --username admin --password admin status
 # Check status (default management port 5444)
 shibudb manager status
 hibudb manager --port 19090 status
@@ -226,26 +231,30 @@ hibudb manager --port 19090 status
 
 ### Runtime Management
 ```bash
-# View connection statistics
-shibudb manager stats
+# View connection statistics (admin-only)
+shibudb manager --username admin --password admin stats
 
-# Update connection limit
-shibudb manager limit 2000
+# Update connection limit (admin-only)
+shibudb manager --username admin --password admin limit 2000
 
-# Health check
-shibudb manager health
+# Health check (admin-only)
+shibudb manager --username admin --password admin health
 
 # If the server used e.g. --management-port 19090
-shibudb manager --port 19090 stats
+shibudb manager --port 19090 --username admin --password admin stats
 ```
 
 ### HTTP Management API
 ```bash
 # Get connection status (default management port 5444)
-curl http://localhost:5444/limit
+shibudb manager --username admin --password admin generate-token
 
-# Update connection limit
+# Get connection status (default management port 5444; auth required)
+curl http://localhost:5444/limit \
+  -H "Authorization: Bearer <management_token>"
+# Update connection limit (auth required)
 curl -X PUT http://localhost:5444/limit \
+  -H "Authorization: Bearer <management_token>" \
   -H "Content-Type: application/json" \
   -d '{"limit": 2000}'
 ```

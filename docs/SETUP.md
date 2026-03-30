@@ -107,7 +107,7 @@ SHIBUDB_MAX_CONNECTIONS=2000 shibudb start
 shibudb start --max-connections 2000 --port 9090
 
 # Or update at runtime (default management port is 5444 when using default main port 4444)
-shibudb manager limit 2000
+shibudb manager --username admin --password admin limit 2000
 ```
 
 ## First Steps
@@ -190,17 +190,20 @@ tail -f ~/.shibudb/log/shibudb.log
 telnet localhost 4444
 
 # Test management API (default management port 5444, set with start/run --management-port)
-curl http://localhost:5444/health
+curl http://localhost:5444/health -H "Authorization: Bearer <management_token>"
 ```
 
 ### 3. Verify Management API
 
 ```bash
 # Get connection statistics
-curl http://localhost:5444/stats
+curl http://localhost:5444/stats -H "Authorization: Bearer <management_token>"
 
 # Get current connection limit
-curl http://localhost:5444/limit
+curl http://localhost:5444/limit -H "Authorization: Bearer <management_token>"
+
+# Create management token (admin-only)
+shibudb manager --username admin --password admin generate-token
 ```
 
 ### 4. Run Basic Tests
@@ -315,7 +318,7 @@ tail -f ~/.shibudb/log/shibudb.log
 sudo shibudb start --max-connections 5000
 
 # Monitor connection usage (use your listen port)
-shibudb manager stats
+shibudb manager --username admin --password admin stats
 ```
 
 #### 2. Memory Usage

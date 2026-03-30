@@ -4,7 +4,7 @@
 
 ShibuDB now supports **dynamic connection limiting** that allows you to update connection limits at runtime without restarting the server. This feature provides multiple ways to manage connection limits based on your operational needs.
 
-At server startup, set the initial limit with `shibudb start --max-connections <n>` (optional `--port <p>` and `--management-port <m>`; defaults **4444** and **5444**) or the `SHIBUDB_MAX_CONNECTIONS` environment variable (see `shibudb --help`). A persisted `connection_limit.json` under your data directory still takes precedence when present. Use `shibudb manager --port` with the same port the server passed to `--management-port`.
+At server startup, set the initial limit with `shibudb start --max-connections <n>` (optional `--port <p>` and `--management-port <m>`; defaults **4444** and **5444**) or the `SHIBUDB_MAX_CONNECTIONS` environment variable (see `shibudb --help`). A persisted `connection_limit.json` under your data directory still takes precedence when present. Use `shibudb manager --port` with the same port the server passed to `--management-port`, and authenticate manager commands with admin credentials.
 
 ## Key Features
 
@@ -18,13 +18,18 @@ At server startup, set the initial limit with `shibudb start --max-connections <
 
 ### 1. HTTP Management API
 
-The server starts a management HTTP server on the port given by `start`/`run` **`--management-port`** (default **5444**).
+The server starts a management HTTP server on the port given by `start`/`run` **`--management-port`** (default **5444**). All endpoints require:
+
+```bash
+Authorization: Bearer <management_token>
+```
 
 #### Endpoints
 
 **Health Check**
 ```bash
 GET http://localhost:5444/health
+Authorization: Bearer <management_token>
 ```
 Response:
 ```json
@@ -37,6 +42,7 @@ Response:
 **Connection Statistics**
 ```bash
 GET http://localhost:5444/stats
+Authorization: Bearer <management_token>
 ```
 Response:
 ```json
@@ -51,6 +57,7 @@ Response:
 **Get Current Limit**
 ```bash
 GET http://localhost:5444/limit
+Authorization: Bearer <management_token>
 ```
 Response:
 ```json
@@ -63,6 +70,7 @@ Response:
 **Set Connection Limit**
 ```bash
 PUT http://localhost:5444/limit
+Authorization: Bearer <management_token>
 Content-Type: application/json
 
 {
@@ -81,6 +89,7 @@ Response:
 **Increase Limit**
 ```bash
 POST http://localhost:5444/limit/increase
+Authorization: Bearer <management_token>
 Content-Type: application/json
 
 {
@@ -101,6 +110,7 @@ Response:
 **Decrease Limit**
 ```bash
 POST http://localhost:5444/limit/decrease
+Authorization: Bearer <management_token>
 Content-Type: application/json
 
 {
@@ -123,26 +133,31 @@ Response:
 Use the built-in CLI tool for easy management (default management port is **5444**; use `--port` if yours differs):
 
 ```bash
+# Generate/list/delete management tokens (admin-only)
+shibudb manager --username admin --password admin generate-token
+shibudb manager --username admin --password admin list-tokens
+shibudb manager --username admin --password admin delete-token <token_id>
+
 # Check current status
-shibudb manager status
+shibudb manager --username admin --password admin status
 
 # View detailed statistics
-shibudb manager stats
+shibudb manager --username admin --password admin stats
 
 # Set specific limit
-shibudb manager limit 2000
+shibudb manager --username admin --password admin limit 2000
 
 # Increase limit by 500
-shibudb manager increase 500
+shibudb manager --username admin --password admin increase 500
 
 # Decrease limit by 200
-shibudb manager decrease 200
+shibudb manager --username admin --password admin decrease 200
 
 # Check server health
-shibudb manager health
+shibudb manager --username admin --password admin health
 
 # Example: server started with --port 9090 --management-port 19090
-shibudb manager --port 19090 status
+shibudb manager --port 19090 --username admin --password admin status
 ```
 
 ### 3. Unix Signals
@@ -196,13 +211,13 @@ type ConnectionManager struct {
 sudo shibudb start --max-connections 1000 --port 9090 --management-port 19090
 
 # Monitor usage
-shibudb manager --port 19090 stats
+shibudb manager --port 19090 --username admin --password admin stats
 
 # Scale up during peak hours
-shibudb manager --port 19090 increase 500
+shibudb manager --port 19090 --username admin --password admin increase 500
 
 # Scale down during off-peak
-shibudb manager --port 19090 decrease 300
+shibudb manager --port 19090 --username admin --password admin decrease 300
 ```
 
 ### Development Environment
@@ -212,10 +227,10 @@ shibudb manager --port 19090 decrease 300
 sudo shibudb start --max-connections 100 --port 9090 --management-port 19090
 
 # Increase for load testing
-shibudb manager --port 19090 limit 1000
+shibudb manager --port 19090 --username admin --password admin limit 1000
 
 # Reset to original limit
-shibudb manager --port 19090 limit 100
+shibudb manager --port 19090 --username admin --password admin limit 100
 ```
 
 ### Automated Scaling
@@ -226,16 +241,19 @@ shibudb manager --port 19090 limit 100
 
 while true; do
     # Get current usage
-    usage=$(curl -s http://localhost:5444/stats | jq -r '.usage_percentage')
+    usage=$(curl -s http://localhost:5444/stats \
+        -H "Authorization: Bearer $MGMT_TOKEN" | jq -r '.usage_percentage')
     
     if (( $(echo "$usage > 80" | bc -l) )); then
         echo "High usage detected: ${usage}%"
         curl -X POST http://localhost:5444/limit/increase \
+             -H "Authorization: Bearer $MGMT_TOKEN" \
              -H "Content-Type: application/json" \
              -d '{"amount": 200}'
     elif (( $(echo "$usage < 30" | bc -l) )); then
         echo "Low usage detected: ${usage}%"
         curl -X POST http://localhost:5444/limit/decrease \
+             -H "Authorization: Bearer $MGMT_TOKEN" \
              -H "Content-Type: application/json" \
              -d '{"amount": 100}'
     fi
@@ -299,16 +317,16 @@ Error: Failed to connect to management server: connection refused
 
 ```bash
 # Alert when usage exceeds 80%
-usage=$(shibudb manager --port 19090 stats | grep "Usage Percentage" | awk '{print $3}' | sed 's/%//')
+usage=$(shibudb manager --port 19090 --username admin --password admin stats | grep "Usage Percentage" | awk '{print $3}' | sed 's/%//')
 if (( $(echo "$usage > 80" | bc -l) )); then
     echo "WARNING: High connection usage: ${usage}%"
     # Send alert via email, Slack, etc.
 fi
 
 # Alert when limit changes
-old_limit=$(shibudb manager --port 19090 status | grep "Current Limit" | awk '{print $3}')
+old_limit=$(shibudb manager --port 19090 --username admin --password admin status | grep "Current Limit" | awk '{print $3}')
 sleep 60
-new_limit=$(shibudb manager --port 19090 status | grep "Current Limit" | awk '{print $3}')
+new_limit=$(shibudb manager --port 19090 --username admin --password admin status | grep "Current Limit" | awk '{print $3}')
 if [ "$old_limit" != "$new_limit" ]; then
     echo "INFO: Connection limit changed from $old_limit to $new_limit"
 fi
@@ -325,7 +343,7 @@ sudo shibudb start --max-connections 500 --port 9090 --management-port 19090
 ### 2. Monitor Regularly
 ```bash
 # Set up monitoring
-watch -n 30 'shibudb manager --port 19090 stats'
+watch -n 30 'shibudb manager --port 19090 --username admin --password admin stats'
 ```
 
 ### 3. Use Appropriate Update Methods
@@ -338,13 +356,13 @@ watch -n 30 'shibudb manager --port 19090 stats'
 # Pre-configure scaling scripts
 cat > scale_up.sh << 'EOF'
 #!/bin/bash
-shibudb manager increase 200
+shibudb manager --username admin --password admin increase 200
 echo "$(date): Increased connection limit"
 EOF
 
 cat > scale_down.sh << 'EOF'
 #!/bin/bash
-shibudb manager decrease 100
+shibudb manager --username admin --password admin decrease 100
 echo "$(date): Decreased connection limit"
 EOF
 ```
@@ -354,7 +372,8 @@ EOF
 ### Management API Security
 
 - **Network Access**: Management API runs on separate port
-- **No Authentication**: Currently no auth on management API (consider firewall rules)
+- **Bearer Authentication**: All management API endpoints require `Authorization: Bearer <token>`
+- **Token Lifecycle**: Generate/list/delete tokens via admin-only manager commands
 - **Local Access**: Management API only accessible from localhost
 
 ### Recommended Security Measures
