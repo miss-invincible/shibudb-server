@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/shibudb.org/shibudb-server/cmd/server"
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 	"github.com/shibudb.org/shibudb-server/internal/auth"
 	"github.com/shibudb.org/shibudb-server/internal/cliinput"
 	"github.com/shibudb.org/shibudb-server/internal/models"
@@ -50,10 +51,10 @@ type runtimePaths struct {
 	logDir  string
 	runDir  string
 
-	authFile string
+	authFile  string
 	tokenFile string
-	logFile  string
-	pidFile  string
+	logFile   string
+	pidFile   string
 }
 
 func defaultDataDir() string {
@@ -151,6 +152,9 @@ func main() {
 		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root (stores files under lib/, log/, run/)")
 		adminUser := fs.String("admin-user", "", "admin username for initial bootstrap (non-interactive)")
 		adminPass := fs.String("admin-password", "", "admin password for initial bootstrap (non-interactive)")
+		encryptAtRest := fs.Bool("encrypt-at-rest", false, "enable encryption at rest")
+		encryptionPassphrase := fs.String("encryption-passphrase", "", "passphrase for encryption-at-rest")
+		masterKeyFile := fs.String("master-key-file", "", "path to 32-byte master key (hex/base64/plain)")
 		portFlag := fs.String("port", server.DefaultPort, "TCP port for client connections (1–65535)")
 		mgmtPortFlag := fs.String("management-port", server.DefaultManagementPort, "TCP port for the management HTTP API (1–65535; must differ from --port)")
 		maxConnFlag := fs.Int("max-connections", int(resolveDefaultMaxConnections()), "maximum number of concurrent connections (default comes from SHIBUDB_MAX_CONNECTIONS if set; persisted limit may override at runtime)")
@@ -178,7 +182,7 @@ func main() {
 			fmt.Println("Invalid --max-connections value. Must be a positive integer.")
 			return
 		}
-		startServer(port, mgmtPort, maxConnections, newRuntimePaths(*dataDir), *adminUser, *adminPass)
+		startServer(port, mgmtPort, maxConnections, newRuntimePaths(*dataDir), *adminUser, *adminPass, *encryptAtRest, *encryptionPassphrase, *masterKeyFile)
 
 	case "stop":
 		fs := flag.NewFlagSet("stop", flag.ExitOnError)
@@ -191,6 +195,9 @@ func main() {
 		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root (stores files under lib/, log/, run/)")
 		adminUser := fs.String("admin-user", "", "admin username for initial bootstrap (non-interactive)")
 		adminPass := fs.String("admin-password", "", "admin password for initial bootstrap (non-interactive)")
+		encryptAtRest := fs.Bool("encrypt-at-rest", false, "enable encryption at rest")
+		encryptionPassphrase := fs.String("encryption-passphrase", "", "passphrase for encryption-at-rest")
+		masterKeyFile := fs.String("master-key-file", "", "path to 32-byte master key (hex/base64/plain)")
 		portFlag := fs.String("port", server.DefaultPort, "TCP port for client connections (1–65535)")
 		mgmtPortFlag := fs.String("management-port", server.DefaultManagementPort, "TCP port for the management HTTP API (1–65535; must differ from --port)")
 		maxConnFlag := fs.Int("max-connections", int(resolveDefaultMaxConnections()), "maximum number of concurrent connections (default comes from SHIBUDB_MAX_CONNECTIONS if set; persisted limit may override at runtime)")
@@ -219,6 +226,9 @@ func main() {
 			return
 		}
 		paths := newRuntimePaths(*dataDir)
+		if err := initEncryption(paths, *encryptAtRest, *encryptionPassphrase, *masterKeyFile); err != nil {
+			log.Fatalf("Failed to initialize encryption: %v", err)
+		}
 		// Pre-bootstrap admin non-interactively if credentials are provided.
 		// This ensures the auth file exists before StartServer's own NewAuthManager call.
 		if *adminUser != "" && *adminPass != "" {
@@ -287,12 +297,24 @@ func main() {
 		})
 		paths := newRuntimePaths(*dataDir)
 		authCfg := managerAuthConfig{
-			username: strings.TrimSpace(*username),
-			password: strings.TrimSpace(*password),
-			authFile: paths.authFile,
+			username:  strings.TrimSpace(*username),
+			password:  strings.TrimSpace(*password),
+			authFile:  paths.authFile,
 			tokenFile: paths.tokenFile,
 		}
 		handleManagerCommand(mgmtPort, args, authCfg)
+
+	case "migrate-encryption":
+		fs := flag.NewFlagSet("migrate-encryption", flag.ExitOnError)
+		dataDir := fs.String("data-dir", defaultDataDir(), "data directory root")
+		encryptionPassphrase := fs.String("encryption-passphrase", "", "passphrase for encryption-at-rest")
+		masterKeyFile := fs.String("master-key-file", "", "path to 32-byte master key (hex/base64/plain)")
+		fs.Parse(os.Args[2:]) //nolint
+		paths := newRuntimePaths(*dataDir)
+		if err := migrateEncryption(paths, *encryptionPassphrase, *masterKeyFile); err != nil {
+			log.Fatalf("Failed to migrate config files: %v", err)
+		}
+		fmt.Println("Config migration completed. Storage files migrate in-place on next write/checkpoint.")
 
 	case "--help":
 		printHelp()
@@ -926,10 +948,19 @@ func printStartupBanner() {
 }
 
 // buildRunSubcommandArgs builds argv for the child `run` process invoked by start.
-func buildRunSubcommandArgs(port, defaultPort, mgmtPort, defaultMgmtPort string, maxConnections, defaultLimit int32, paths runtimePaths, adminUser, adminPass string) []string {
+func buildRunSubcommandArgs(port, defaultPort, mgmtPort, defaultMgmtPort string, maxConnections, defaultLimit int32, paths runtimePaths, adminUser, adminPass string, encryptAtRest bool, encryptionPassphrase, masterKeyFile string) []string {
 	cmdArgs := []string{"run", "--data-dir", paths.rootDir}
 	if adminUser != "" {
 		cmdArgs = append(cmdArgs, "--admin-user", adminUser, "--admin-password", adminPass)
+	}
+	if encryptAtRest {
+		cmdArgs = append(cmdArgs, "--encrypt-at-rest")
+	}
+	if encryptionPassphrase != "" {
+		cmdArgs = append(cmdArgs, "--encryption-passphrase", encryptionPassphrase)
+	}
+	if masterKeyFile != "" {
+		cmdArgs = append(cmdArgs, "--master-key-file", masterKeyFile)
 	}
 	if port != defaultPort {
 		cmdArgs = append(cmdArgs, "--port", port)
@@ -943,12 +974,16 @@ func buildRunSubcommandArgs(port, defaultPort, mgmtPort, defaultMgmtPort string,
 	return cmdArgs
 }
 
-func startServer(port, mgmtPort string, maxConnections int32, paths runtimePaths, adminUser, adminPass string) {
+func startServer(port, mgmtPort string, maxConnections int32, paths runtimePaths, adminUser, adminPass string, encryptAtRest bool, encryptionPassphrase string, masterKeyFile string) {
 	// Check if server is already running
 	if running, pid := isServerRunning(paths.pidFile); running {
 		fmt.Printf("%sError:%s ShibuDB server is already running (PID: %d)\n", red, reset, pid)
 		fmt.Printf("Use 'shibudb stop' (or specify --data-dir) to stop the existing server first.\n")
 		os.Exit(1)
+	}
+
+	if err := initEncryption(paths, encryptAtRest, encryptionPassphrase, masterKeyFile); err != nil {
+		log.Fatalf("Failed to initialize encryption: %v", err)
 	}
 
 	_, err := auth.NewAuthManagerWithBootstrap(paths.authFile, adminUser, adminPass)
@@ -957,7 +992,7 @@ func startServer(port, mgmtPort string, maxConnections int32, paths runtimePaths
 	}
 	printStartupBanner()
 
-	cmdArgs := buildRunSubcommandArgs(port, server.DefaultPort, mgmtPort, server.DefaultManagementPort, maxConnections, resolveDefaultMaxConnections(), paths, adminUser, adminPass)
+	cmdArgs := buildRunSubcommandArgs(port, server.DefaultPort, mgmtPort, server.DefaultManagementPort, maxConnections, resolveDefaultMaxConnections(), paths, adminUser, adminPass, encryptAtRest, encryptionPassphrase, masterKeyFile)
 	cmd := exec.Command(os.Args[0], cmdArgs...)
 
 	logFile := openLogFile(paths.logFile)
@@ -1008,6 +1043,50 @@ func startServer(port, mgmtPort string, maxConnections int32, paths runtimePaths
 	}
 
 	fmt.Printf("%sShibuDB started on port %s (PID: %d, max connections: %d)%s\n", green, port, cmd.Process.Pid, displayLimit, reset)
+}
+
+func initEncryption(paths runtimePaths, enabled bool, passphrase string, masterKeyFile string) error {
+	cfg := atrest.Config{
+		Enabled:       enabled,
+		DataDir:       paths.libDir,
+		Passphrase:    passphrase,
+		MasterKeyFile: masterKeyFile,
+	}
+	manager, err := atrest.NewManager(cfg)
+	if err != nil {
+		return err
+	}
+	atrest.SetRuntimeManager(manager)
+	return nil
+}
+
+func migrateEncryption(paths runtimePaths, passphrase string, masterKeyFile string) error {
+	if err := initEncryption(paths, true, passphrase, masterKeyFile); err != nil {
+		return err
+	}
+	mgr := atrest.RuntimeManager()
+	if mgr == nil || !mgr.Enabled() {
+		return fmt.Errorf("encryption manager is not enabled")
+	}
+	return filepath.Walk(paths.libDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".json" {
+			return nil
+		}
+		if atrest.IsEncryptedFile(path) {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return mgr.WriteFile(path, raw, 0600, "json-config")
+	})
 }
 
 func stopServer(paths runtimePaths) {

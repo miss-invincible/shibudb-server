@@ -2,7 +2,10 @@ package index
 
 import (
 	"encoding/binary"
+	"fmt"
+
 	"github.com/google/btree"
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 	"golang.org/x/sys/unix"
 	"os"
 	"sync"
@@ -16,6 +19,7 @@ type BTreeIndex struct {
 	file        *os.File
 	mmapData    []byte
 	writeOffset int // Track where to write next
+	encryptMgr  *atrest.Manager
 }
 
 type Item struct {
@@ -27,7 +31,7 @@ func (i Item) Less(other btree.Item) bool {
 	return i.Key < other.(Item).Key
 }
 
-func NewBTreeIndex(filename string) (*BTreeIndex, error) {
+func NewBTreeIndex(filename string, encryptMgr *atrest.Manager) (*BTreeIndex, error) {
 	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return nil, err
@@ -48,9 +52,10 @@ func NewBTreeIndex(filename string) (*BTreeIndex, error) {
 	}
 
 	idx := &BTreeIndex{
-		btree:    btree.New(2),
-		file:     file,
-		mmapData: mmapData,
+		btree:      btree.New(2),
+		file:       file,
+		mmapData:   mmapData,
+		encryptMgr: encryptMgr,
 	}
 
 	idx.writeOffset = idx.BatchLoadFromMmap()
@@ -74,6 +79,12 @@ func (idx *BTreeIndex) BatchLoadFromMmap() int {
 		}
 
 		key := string(idx.mmapData[offset : offset+int(keySize)])
+		if idx.encryptMgr != nil && idx.encryptMgr.Enabled() && keySize > 0 {
+			opened, err := idx.encryptMgr.Open([]byte(key), "btree-index-key")
+			if err == nil {
+				key = string(opened)
+			}
+		}
 		offset += int(keySize)
 
 		idx.btree.ReplaceOrInsert(Item{Key: key, Value: int64(pos)})
@@ -139,6 +150,13 @@ func (idx *BTreeIndex) persistIndex() error {
 
 func (idx *BTreeIndex) appendIndexEntry(key string, pos int64) error {
 	keyBytes := []byte(key)
+	if idx.encryptMgr != nil && idx.encryptMgr.Enabled() {
+		sealed, err := idx.encryptMgr.Seal(keyBytes, "btree-index-key")
+		if err != nil {
+			return fmt.Errorf("failed to encrypt btree key: %w", err)
+		}
+		keyBytes = sealed
+	}
 	keySize := uint32(len(keyBytes))
 	entrySize := 8 + len(keyBytes)
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 	"github.com/shibudb.org/shibudb-server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -127,7 +128,16 @@ func (a *AuthManager) load() error {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
-	data, err := os.ReadFile(a.filePath)
+	var (
+		data []byte
+		err  error
+	)
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		data, err = mgr.ReadFile(a.filePath, "auth-users")
+	} else {
+		data, err = os.ReadFile(a.filePath)
+	}
 	if err != nil {
 		return err
 	}
@@ -138,6 +148,10 @@ func (a *AuthManager) save() error {
 	data, err := json.MarshalIndent(a.users, "", "  ")
 	if err != nil {
 		return err
+	}
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		return mgr.WriteFile(a.filePath, data, 0600, "auth-users")
 	}
 	return os.WriteFile(a.filePath, data, 0644)
 }

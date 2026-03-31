@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DataIntelligenceCrew/go-faiss"
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 	"github.com/shibudb.org/shibudb-server/internal/wal"
 )
 
@@ -58,9 +60,11 @@ type VectorEngineImpl struct {
 		id  int64
 		vec []float32
 	}
-	maxBatch int
-	maxDelay time.Duration
-	flushCh  chan struct{}
+	maxBatch          int
+	maxDelay          time.Duration
+	flushCh           chan struct{}
+	encryptMgr        *atrest.Manager
+	dataFileEncrypted bool
 }
 
 var _ VectorEngine = (*VectorEngineImpl)(nil)
@@ -72,10 +76,21 @@ func NewVectorEngine(dataPath, indexPath, walPath string, maxVectorSize int, ind
 		return nil, fmt.Errorf("open data file: %w", err)
 	}
 
+	encryptMgr := atrest.RuntimeManager()
 	// Create (or read) the ID-mapped index
 	var idmap faiss.Index
 	if _, err := os.Stat(indexPath); err == nil {
-		idmap, err = faiss.ReadIndex(indexPath, 0)
+		if encryptMgr != nil && encryptMgr.Enabled() && atrest.IsEncryptedFile(indexPath) {
+			tmpFile, tempPath, err := decryptIndexToTemp(indexPath, encryptMgr)
+			if err != nil {
+				return nil, err
+			}
+			tmpFile.Close()
+			defer os.Remove(tempPath)
+			idmap, err = faiss.ReadIndex(tempPath, 0)
+		} else {
+			idmap, err = faiss.ReadIndex(indexPath, 0)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to read FAISS index from file: %w", err)
 		}
@@ -109,10 +124,12 @@ func NewVectorEngine(dataPath, indexPath, walPath string, maxVectorSize int, ind
 		quitChan:      make(chan struct{}),
 
 		// batching defaults
-		maxBatch: 1024,
-		maxDelay: 50 * time.Millisecond,
-		flushCh:  make(chan struct{}, 1),
+		maxBatch:   1024,
+		maxDelay:   50 * time.Millisecond,
+		flushCh:    make(chan struct{}, 1),
+		encryptMgr: encryptMgr,
 	}
+	e.dataFileEncrypted = e.shouldUseEncryptedDataFile()
 
 	// Rebuild fileOffsets from data file (last record per id wins; tombstones mark deleted).
 	if err := e.rebuildOffsetsFromDataFile(); err != nil {
@@ -339,9 +356,8 @@ func (ve *VectorEngineImpl) GetVectorByID(id int64) ([]float32, error) {
 		return nil, fmt.Errorf("ID %d not found", id)
 	}
 
-	recordSize := 8 + 4*ve.maxVectorSize
-	buf := make([]byte, recordSize)
-	if _, err := ve.dataFile.ReadAt(buf, offset); err != nil {
+	buf, err := ve.readRecordAt(offset)
+	if err != nil {
 		return nil, fmt.Errorf("read vector at offset %d: %w", offset, err)
 	}
 	// Tombstone: same record format, first float32 is reserved marker (see tombstoneMarker).
@@ -422,12 +438,21 @@ func (ve *VectorEngineImpl) appendTombstoneToDataFile(id int64) error {
 	if err != nil {
 		return err
 	}
-	recordSize := 8 + 4*ve.maxVectorSize
-	buf := make([]byte, recordSize)
-	binary.LittleEndian.PutUint64(buf[0:8], uint64(id))
-	binary.LittleEndian.PutUint32(buf[8:12], tombstoneMarker)
-	// rest is zero; same size as a normal vector record
-	if _, err := ve.dataFile.Write(buf); err != nil {
+	plain := make([]byte, 8+4*ve.maxVectorSize)
+	binary.LittleEndian.PutUint64(plain[0:8], uint64(id))
+	binary.LittleEndian.PutUint32(plain[8:12], tombstoneMarker)
+	toWrite := plain
+	if ve.dataFileEncrypted {
+		sealed, err := ve.encryptMgr.Seal(plain, "vector-record")
+		if err != nil {
+			return err
+		}
+		prefix := make([]byte, 4+len(sealed))
+		binary.LittleEndian.PutUint32(prefix[0:4], uint32(len(sealed)))
+		copy(prefix[4:], sealed)
+		toWrite = prefix
+	}
+	if _, err := ve.dataFile.Write(toWrite); err != nil {
 		return err
 	}
 	if err := ve.dataFile.Sync(); err != nil {
@@ -486,8 +511,28 @@ func (ve *VectorEngineImpl) checkpoint() error {
 	defer ve.lock.Unlock()
 
 	// Persist the (ID-mapped) index
-	if err := faiss.WriteIndex(ve.idMapIndex, ve.indexFile); err != nil {
-		return fmt.Errorf("write index: %w", err)
+	if ve.encryptMgr != nil && ve.encryptMgr.Enabled() {
+		tmp, err := os.CreateTemp(filepath.Dir(ve.indexFile), ".faiss-*.tmp")
+		if err != nil {
+			return err
+		}
+		tmpPath := tmp.Name()
+		tmp.Close()
+		defer os.Remove(tmpPath)
+		if err := faiss.WriteIndex(ve.idMapIndex, tmpPath); err != nil {
+			return fmt.Errorf("write temp index: %w", err)
+		}
+		raw, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return err
+		}
+		if err := ve.encryptMgr.WriteFile(ve.indexFile, raw, 0600, "vector-faiss-index"); err != nil {
+			return err
+		}
+	} else {
+		if err := faiss.WriteIndex(ve.idMapIndex, ve.indexFile); err != nil {
+			return fmt.Errorf("write index: %w", err)
+		}
 	}
 	// Ensure data file flushed
 	if err := ve.dataFile.Sync(); err != nil {
@@ -558,7 +603,18 @@ func (ve *VectorEngineImpl) appendToDataFile(id int64, vector []float32) error {
 	for i, v := range vector {
 		binary.LittleEndian.PutUint32(buf[8+i*4:], math.Float32bits(v))
 	}
-	if _, err := ve.dataFile.Write(buf); err != nil {
+	toWrite := buf
+	if ve.dataFileEncrypted {
+		sealed, err := ve.encryptMgr.Seal(buf, "vector-record")
+		if err != nil {
+			return err
+		}
+		prefix := make([]byte, 4+len(sealed))
+		binary.LittleEndian.PutUint32(prefix[0:4], uint32(len(sealed)))
+		copy(prefix[4:], sealed)
+		toWrite = prefix
+	}
+	if _, err := ve.dataFile.Write(toWrite); err != nil {
 		return err
 	}
 	ve.fileOffsets[id] = pos
@@ -570,10 +626,39 @@ func (ve *VectorEngineImpl) rebuildOffsetsFromDataFile() error {
 	if _, err := ve.dataFile.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	recordSize := 8 + 4*ve.maxVectorSize
 	offset := int64(0)
 
 	for {
+		if ve.dataFileEncrypted {
+			lenBuf := make([]byte, 4)
+			n, err := ve.dataFile.Read(lenBuf)
+			if err != nil {
+				if err == io.EOF || (err == io.ErrUnexpectedEOF && n == 0) {
+					break
+				}
+				return fmt.Errorf("read encrypted length: %w", err)
+			}
+			if n < 4 {
+				break
+			}
+			cipherLen := int(binary.LittleEndian.Uint32(lenBuf))
+			if cipherLen <= 0 {
+				break
+			}
+			cipherBuf := make([]byte, cipherLen)
+			if _, err := io.ReadFull(ve.dataFile, cipherBuf); err != nil {
+				break
+			}
+			plain, err := ve.encryptMgr.Open(cipherBuf, "vector-record")
+			if err != nil || len(plain) < 8 {
+				break
+			}
+			id := int64(binary.LittleEndian.Uint64(plain[0:8]))
+			ve.fileOffsets[id] = offset
+			offset += int64(4 + cipherLen)
+			continue
+		}
+		recordSize := 8 + 4*ve.maxVectorSize
 		buf := make([]byte, recordSize)
 		n, err := ve.dataFile.Read(buf)
 		if err != nil {
@@ -581,13 +666,11 @@ func (ve *VectorEngineImpl) rebuildOffsetsFromDataFile() error {
 				break
 			}
 			if err == io.ErrUnexpectedEOF && n > 0 {
-				// Truncated tail — ignore the last partial record
 				break
 			}
 			return fmt.Errorf("read data file: %w", err)
 		}
 		if n < recordSize {
-			// Partial/truncated record — ignore
 			break
 		}
 		id := int64(binary.LittleEndian.Uint64(buf[0:8]))
@@ -595,6 +678,42 @@ func (ve *VectorEngineImpl) rebuildOffsetsFromDataFile() error {
 		offset += int64(recordSize)
 	}
 	return nil
+}
+
+func (ve *VectorEngineImpl) shouldUseEncryptedDataFile() bool {
+	if ve.encryptMgr == nil || !ve.encryptMgr.Enabled() {
+		return false
+	}
+	info, err := ve.dataFile.Stat()
+	if err != nil || info.Size() == 0 {
+		return true
+	}
+	plainRecordSize := int64(8 + 4*ve.maxVectorSize)
+	if info.Size()%plainRecordSize == 0 {
+		return false
+	}
+	return true
+}
+
+func (ve *VectorEngineImpl) readRecordAt(offset int64) ([]byte, error) {
+	if ve.dataFileEncrypted {
+		header := make([]byte, 4)
+		if _, err := ve.dataFile.ReadAt(header, offset); err != nil {
+			return nil, err
+		}
+		cipherLen := int(binary.LittleEndian.Uint32(header))
+		cipherBuf := make([]byte, cipherLen)
+		if _, err := ve.dataFile.ReadAt(cipherBuf, offset+4); err != nil {
+			return nil, err
+		}
+		return ve.encryptMgr.Open(cipherBuf, "vector-record")
+	}
+	recordSize := 8 + 4*ve.maxVectorSize
+	buf := make([]byte, recordSize)
+	if _, err := ve.dataFile.ReadAt(buf, offset); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 // --- batched persistence ---
@@ -677,4 +796,24 @@ func bytesToFloat32Array(buf []byte) ([]float32, error) {
 		vec[i] = math.Float32frombits(binary.LittleEndian.Uint32(buf[i*4:]))
 	}
 	return vec, nil
+}
+
+func decryptIndexToTemp(indexPath string, mgr *atrest.Manager) (*os.File, string, error) {
+	raw, err := mgr.ReadFile(indexPath, "vector-faiss-index")
+	if err != nil {
+		return nil, "", err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(indexPath), ".faiss-dec-*.tmp")
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		return nil, "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return nil, "", err
+	}
+	return tmp, tmp.Name(), nil
 }

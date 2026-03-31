@@ -12,7 +12,7 @@ func TestBTreeIndex(t *testing.T) {
 	os.Remove("test_index.dat")
 
 	// Initialize BTreeIndex
-	idx, err := NewBTreeIndex("test_index.dat")
+	idx, err := NewBTreeIndex("test_index.dat", nil)
 	if err != nil {
 		t.Fatalf("Failed to create index: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestBTreeIndex(t *testing.T) {
 		idx.Close()
 
 		// Reload the index from file
-		idx, err = NewBTreeIndex("test_index.dat")
+		idx, err = NewBTreeIndex("test_index.dat", nil)
 		if err != nil {
 			t.Fatalf("Failed to reload index: %v", err)
 		}
@@ -121,7 +121,7 @@ func TestBTreeIndex(t *testing.T) {
 		os.Remove("test_index_persistence.dat")
 
 		// Initialize BTreeIndex
-		idx, err := NewBTreeIndex("test_index_persistence.dat")
+		idx, err := NewBTreeIndex("test_index_persistence.dat", nil)
 		if err != nil {
 			t.Fatalf("Failed to create index: %v", err)
 		}
@@ -143,7 +143,7 @@ func TestBTreeIndex(t *testing.T) {
 		}
 
 		// Reopen the index
-		idx, err = NewBTreeIndex("test_index_persistence.dat")
+		idx, err = NewBTreeIndex("test_index_persistence.dat", nil)
 		if err != nil {
 			t.Fatalf("Failed to reopen index: %v", err)
 		}
@@ -159,7 +159,7 @@ func TestBTreeIndex(t *testing.T) {
 	t.Run("ConcurrentUpdates", func(t *testing.T) {
 		os.Remove("test_index_concurrent.dat")
 
-		idx, err := NewBTreeIndex("test_index_concurrent.dat")
+		idx, err := NewBTreeIndex("test_index_concurrent.dat", nil)
 		if err != nil {
 			t.Fatalf("Failed to create index: %v", err)
 		}

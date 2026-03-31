@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 )
 
 // ConnectionConfig stores persistent connection settings
@@ -31,8 +33,15 @@ func SaveConnectionLimit(dataDir string, limit int32) error {
 		return fmt.Errorf("failed to marshal config: %v", err)
 	}
 
-	if err := os.WriteFile(cfgFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %v", err)
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		if err := mgr.WriteFile(cfgFile, data, 0600, "connection-limit"); err != nil {
+			return fmt.Errorf("failed to write encrypted config file: %v", err)
+		}
+	} else {
+		if err := os.WriteFile(cfgFile, data, 0644); err != nil {
+			return fmt.Errorf("failed to write config file: %v", err)
+		}
 	}
 
 	fmt.Printf("Connection limit saved to: %s\n", cfgFile)
@@ -44,7 +53,16 @@ func SaveConnectionLimit(dataDir string, limit int32) error {
 // (so callers can distinguish “no persisted config” from a real on-disk limit).
 func LoadConnectionLimit(dataDir string) (int32, error) {
 	cfgFile := filepath.Join(dataDir, "connection_limit.json")
-	data, err := os.ReadFile(cfgFile)
+	var (
+		data []byte
+		err  error
+	)
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		data, err = mgr.ReadFile(cfgFile, "connection-limit")
+	} else {
+		data, err = os.ReadFile(cfgFile)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return 0, err

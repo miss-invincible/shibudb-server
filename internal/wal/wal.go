@@ -2,9 +2,12 @@ package wal
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 )
 
 type WAL struct {
@@ -26,6 +29,16 @@ func (w *WAL) WriteEntry(key, value string) error {
 
 	keyBytes := []byte(key)
 	valBytes := []byte(value)
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		plain := serializeKV(keyBytes, valBytes)
+		sealed, err := mgr.Seal(plain, "wal-record")
+		if err != nil {
+			return err
+		}
+		keyBytes = nil
+		valBytes = sealed
+	}
 
 	keySize := uint32(len(keyBytes))
 	valSize := uint32(len(valBytes))
@@ -51,13 +64,26 @@ func (w *WAL) WriteDelete(key string) error {
 	defer w.lock.Unlock()
 
 	keyBytes := []byte(key)
+	valBytes := []byte{}
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		plain := serializeKV(keyBytes, valBytes)
+		sealed, err := mgr.Seal(plain, "wal-record")
+		if err != nil {
+			return err
+		}
+		keyBytes = nil
+		valBytes = sealed
+	}
 	keySize := uint32(len(keyBytes))
+	valSize := uint32(len(valBytes))
 
-	buf := make([]byte, 9+len(keyBytes))
+	buf := make([]byte, 9+len(keyBytes)+len(valBytes))
 	binary.LittleEndian.PutUint32(buf[0:4], keySize)
-	binary.LittleEndian.PutUint32(buf[4:8], 0) // value size 0
-	buf[8] = 'D'                               // 'D' means delete
-	copy(buf[9:], keyBytes)
+	binary.LittleEndian.PutUint32(buf[4:8], valSize)
+	buf[8] = 'D' // 'D' means delete
+	copy(buf[9:9+len(keyBytes)], keyBytes)
+	copy(buf[9+len(keyBytes):], valBytes)
 
 	_, err := w.file.Write(buf)
 	if err != nil {
@@ -130,6 +156,22 @@ func (w *WAL) Replay() ([][2]string, error) {
 			return nil, err
 		}
 
+		if keySize == 0 {
+			mgr := atrest.RuntimeManager()
+			if mgr == nil || !mgr.Enabled() {
+				return nil, fmt.Errorf("encrypted wal found but encryption manager is not enabled")
+			}
+			plain, err := mgr.Open(valBytes, "wal-record")
+			if err != nil {
+				return nil, err
+			}
+			decodedKey, decodedVal, err := deserializeKV(plain)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, [2]string{string(decodedKey), string(decodedVal)})
+			continue
+		}
 		entries = append(entries, [2]string{string(keyBytes), string(valBytes)})
 	}
 	return entries, nil
@@ -153,4 +195,29 @@ func (w *WAL) Close() error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	return w.file.Close()
+}
+
+func serializeKV(key, value []byte) []byte {
+	buf := make([]byte, 8+len(key)+len(value))
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(key)))
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(len(value)))
+	copy(buf[8:8+len(key)], key)
+	copy(buf[8+len(key):], value)
+	return buf
+}
+
+func deserializeKV(data []byte) ([]byte, []byte, error) {
+	if len(data) < 8 {
+		return nil, nil, fmt.Errorf("invalid serialized wal kv")
+	}
+	keySize := int(binary.LittleEndian.Uint32(data[0:4]))
+	valSize := int(binary.LittleEndian.Uint32(data[4:8]))
+	if len(data) < 8+keySize+valSize {
+		return nil, nil, fmt.Errorf("invalid serialized wal kv lengths")
+	}
+	key := make([]byte, keySize)
+	value := make([]byte, valSize)
+	copy(key, data[8:8+keySize])
+	copy(value, data[8+keySize:8+keySize+valSize])
+	return key, value, nil
 }

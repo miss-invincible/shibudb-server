@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 	"github.com/shibudb.org/shibudb-server/internal/storage"
 
 	"github.com/DataIntelligenceCrew/go-faiss"
@@ -118,7 +119,16 @@ func NewSpaceManager(basePath string) *SpaceManager {
 }
 
 func (sm *SpaceManager) loadSpaceMetas() {
-	data, err := os.ReadFile(sm.metaFilePath)
+	var (
+		data []byte
+		err  error
+	)
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		data, err = mgr.ReadFile(sm.metaFilePath, "space-metadata")
+	} else {
+		data, err = os.ReadFile(sm.metaFilePath)
+	}
 	if err != nil {
 		return // file might not exist yet
 	}
@@ -170,6 +180,11 @@ func (sm *SpaceManager) saveSpaceMetas() {
 		metas = append(metas, meta)
 	}
 	data, _ := json.MarshalIndent(metas, "", "  ")
+	mgr := atrest.RuntimeManager()
+	if mgr != nil && mgr.Enabled() {
+		_ = mgr.WriteFile(sm.metaFilePath, data, 0600, "space-metadata")
+		return
+	}
 	_ = os.WriteFile(sm.metaFilePath, data, 0644)
 }
 

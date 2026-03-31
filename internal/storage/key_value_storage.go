@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/shibudb.org/shibudb-server/internal/atrest"
 	"github.com/shibudb.org/shibudb-server/internal/index"
 	"github.com/shibudb.org/shibudb-server/internal/wal"
 )
@@ -25,6 +26,7 @@ type ShibuDB struct {
 	quitChan     chan struct{}
 	flushRunning int32
 	closeOnce    sync.Once
+	encryptMgr   *atrest.Manager
 }
 
 func OpenDBWithPathsAndWAL(dataPath, walPath, indexPath string, enableWAL bool) (*ShibuDB, error) {
@@ -33,7 +35,8 @@ func OpenDBWithPathsAndWAL(dataPath, walPath, indexPath string, enableWAL bool) 
 		return nil, err
 	}
 
-	dbIndex, err := index.NewBTreeIndex(indexPath)
+	encryptMgr := atrest.RuntimeManager()
+	dbIndex, err := index.NewBTreeIndex(indexPath, encryptMgr)
 	if err != nil {
 		return nil, err
 	}
@@ -47,11 +50,12 @@ func OpenDBWithPathsAndWAL(dataPath, walPath, indexPath string, enableWAL bool) 
 	}
 
 	db := &ShibuDB{
-		file:     file,
-		index:    dbIndex,
-		wal:      dbWAL,
-		quitChan: make(chan struct{}),
-		batch:    make(map[string]string),
+		file:       file,
+		index:      dbIndex,
+		wal:        dbWAL,
+		quitChan:   make(chan struct{}),
+		batch:      make(map[string]string),
+		encryptMgr: encryptMgr,
 	}
 
 	db.index.BatchLoadFromMmap()
@@ -73,7 +77,8 @@ func OpenDBWithWAL(filename string, walFilename string, enableWAL bool) (*ShibuD
 	if err != nil {
 		return nil, err
 	}
-	dbIndex, err := index.NewBTreeIndex("index.dat")
+	encryptMgr := atrest.RuntimeManager()
+	dbIndex, err := index.NewBTreeIndex("index.dat", encryptMgr)
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +90,12 @@ func OpenDBWithWAL(filename string, walFilename string, enableWAL bool) (*ShibuD
 		}
 	}
 	db := &ShibuDB{
-		file:     file,
-		index:    dbIndex,
-		wal:      dbWAL,
-		quitChan: make(chan struct{}),
-		batch:    make(map[string]string),
+		file:       file,
+		index:      dbIndex,
+		wal:        dbWAL,
+		quitChan:   make(chan struct{}),
+		batch:      make(map[string]string),
+		encryptMgr: encryptMgr,
 	}
 	db.index.BatchLoadFromMmap()
 	if enableWAL {
@@ -178,6 +184,15 @@ func (db *ShibuDB) FlushBatch() error {
 	for key, value := range batchCopy {
 		keyBytes := []byte(key)
 		valBytes := []byte(value)
+		if db.encryptMgr != nil && db.encryptMgr.Enabled() {
+			serialized := serializeKV(keyBytes, valBytes)
+			sealed, err := db.encryptMgr.Seal(serialized, "kv-record")
+			if err != nil {
+				return err
+			}
+			keyBytes = nil
+			valBytes = sealed
+		}
 
 		keySize := uint32(len(keyBytes))
 		valSize := uint32(len(valBytes))
@@ -275,6 +290,26 @@ func (db *ShibuDB) Get(key string) (string, error) {
 	log.Println("Key found", string(keyBytes))
 	log.Println("Value found", string(valBytes))
 
+	if keySize == 0 {
+		if db.encryptMgr == nil || !db.encryptMgr.Enabled() {
+			return "", errors.New("encrypted key-value record found but encryption is disabled")
+		}
+		plain, err := db.encryptMgr.Open(valBytes, "kv-record")
+		if err != nil {
+			return "", err
+		}
+		decodedKey, decodedVal, err := deserializeKV(plain)
+		if err != nil {
+			return "", err
+		}
+		if string(decodedKey) != key {
+			return "", errors.New("key mismatch in encrypted record")
+		}
+		if len(decodedVal) == 0 {
+			return "", errors.New("key is deleted")
+		}
+		return string(decodedVal), nil
+	}
 	if string(keyBytes) == key {
 		value := string(valBytes)
 		if value == "__deleted__" {
@@ -303,13 +338,24 @@ func (db *ShibuDB) Delete(key string) error {
 	}
 
 	keyBytes := []byte(key)
+	valBytes := []byte{}
+	if db.encryptMgr != nil && db.encryptMgr.Enabled() {
+		serialized := serializeKV(keyBytes, valBytes)
+		sealed, err := db.encryptMgr.Seal(serialized, "kv-record")
+		if err != nil {
+			return err
+		}
+		keyBytes = nil
+		valBytes = sealed
+	}
 	keySize := uint32(len(keyBytes))
-	valSize := uint32(0)
+	valSize := uint32(len(valBytes))
 
-	buf := make([]byte, 8+len(keyBytes))
+	buf := make([]byte, 8+len(keyBytes)+len(valBytes))
 	binary.LittleEndian.PutUint32(buf[0:4], keySize)
 	binary.LittleEndian.PutUint32(buf[4:8], valSize)
 	copy(buf[8:], keyBytes)
+	copy(buf[8+len(keyBytes):], valBytes)
 
 	pos, err := db.file.Seek(0, 2)
 	if err != nil {
@@ -335,4 +381,29 @@ func (db *ShibuDB) Close() error {
 
 func (db *ShibuDB) Put(key, value string) error {
 	return db.PutBatch(key, value)
+}
+
+func serializeKV(key, value []byte) []byte {
+	buf := make([]byte, 8+len(key)+len(value))
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(key)))
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(len(value)))
+	copy(buf[8:8+len(key)], key)
+	copy(buf[8+len(key):], value)
+	return buf
+}
+
+func deserializeKV(data []byte) ([]byte, []byte, error) {
+	if len(data) < 8 {
+		return nil, nil, errors.New("invalid kv payload")
+	}
+	keySize := int(binary.LittleEndian.Uint32(data[0:4]))
+	valSize := int(binary.LittleEndian.Uint32(data[4:8]))
+	if len(data) < 8+keySize+valSize {
+		return nil, nil, errors.New("invalid kv payload sizes")
+	}
+	k := make([]byte, keySize)
+	v := make([]byte, valSize)
+	copy(k, data[8:8+keySize])
+	copy(v, data[8+keySize:8+keySize+valSize])
+	return k, v, nil
 }

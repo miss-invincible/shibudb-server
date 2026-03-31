@@ -12,7 +12,7 @@ import (
 func BenchmarkConcurrentIndexOps(b *testing.B) {
 	_ = os.Remove("benchmark_index.dat")
 
-	idx, err := index.NewBTreeIndex("benchmark_index.dat")
+	idx, err := index.NewBTreeIndex("benchmark_index.dat", nil)
 	if err != nil {
 		b.Fatalf("Failed to create index: %v", err)
 	}
