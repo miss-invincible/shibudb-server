@@ -25,7 +25,8 @@ ShibuDb is a lightweight database system with vector search capabilities powered
 git clone https://github.com/shibudb.org/shibudb-server.git
 cd ShibuDb
 
-# Start the local server on port 4444 with default admin username and password as admin:admin
+# Start the local server on port 4444.
+# This dev script bootstraps an admin user as admin:admin (see scripts/start-local-server.sh).
 make start-local-server
 ```
 
@@ -59,11 +60,11 @@ GET user:1
 
 ### Administration
 - **[Dynamic Connection Limiting](docs/DYNAMIC_CONNECTION_LIMITING.md)** - Runtime connection management
-- **[Administration Guide](docs/ADMINISTRATION.md)** - Server administration and monitoring *(Coming Soon)*
+- **[Administration Guide](docs/ADMINISTRATION.md)** - Server administration and monitoring
 
 ### Reference
-- **[API Reference](docs/API_REFERENCE.md)** - Complete command reference *(Coming Soon)*
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions *(Coming Soon)*
+- **[API Reference](docs/API_REFERENCE.md)** - Complete command reference
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## 🏗️ Architecture
 
@@ -109,7 +110,7 @@ make start-local-server
 make connect-local-client
 ```
 
-**Default credentials for local development:**
+**Default credentials for local development (when using `make start-local-server`):**
 - Username: `admin`
 - Password: `admin`
 - Port: `4444`
@@ -149,7 +150,7 @@ make connect-local-client
 ## 📦 Installation Options
 
 ### From brew
-f you prefer using Homebrew on macOS, you can install ShibuDb directly from our tap:
+If you prefer using Homebrew on macOS, you can install ShibuDb directly from our tap:
 
 ```bash
 brew tap shibudb.org/shibudb
@@ -226,7 +227,7 @@ shibudb manager --username admin --password admin status
 shibudb manager --port 19090 --username admin --password admin status
 # Check status (default management port 5444)
 shibudb manager status
-hibudb manager --port 19090 status
+shibudb manager --port 19090 status
 ```
 
 ### Runtime Management

@@ -109,10 +109,8 @@ The authentication system provides role-based access control.
 
 **Responsibilities:**
 - Authenticate users via username/password
-- Manage user roles (admin, user, read-only)
-- Enforce space-level permissions
-- Track user sessions
-- Provide audit logging
+- Manage user roles (admin/user) and space permissions (`read`/`write`)
+- Enforce space-level permissions during query execution
 
 ### 4. Storage Layer
 
@@ -128,7 +126,6 @@ The storage layer manages data persistence and retrieval.
 - Store and retrieve key-value pairs
 - Manage vector data and indexes
 - Handle data compression and optimization
-- Provide transaction support
 
 ### 5. Index Layer
 
@@ -151,9 +148,9 @@ The index layer provides fast data access patterns.
 The persistence layer ensures data durability and recovery.
 
 **Key Components:**
-- **WAL (Write-Ahead Log)**: Ensures ACID compliance
+- **WAL (Write-Ahead Log)**: Optional crash-recovery log (enabled per-space)
 - **Data Files**: Store actual data on disk
-- **Checkpoint Manager**: Creates recovery points
+ - **Checkpointing / fsync**: Periodic durability mechanisms (engine-dependent)
 
 **Responsibilities:**
 - Ensure data durability
@@ -325,7 +322,7 @@ ShibuDb is designed for single-instance deployment. For horizontal scaling:
 
 ### Authorization
 
-- **Role-Based Access Control**: Admin, User, Read-Only roles
+- **Role-Based Access Control**: Admin and User roles, with per-space `read`/`write` permissions
 - **Space-Level Permissions**: Control access to specific spaces
 - **Operation-Level Permissions**: Control specific operations
 

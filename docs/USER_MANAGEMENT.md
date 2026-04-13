@@ -43,14 +43,15 @@ ShibuDb provides a comprehensive user management system with role-based access c
 
 ## Authentication System
 
-### Default Admin User
+### Admin bootstrap (first startup)
 
-On first startup, ShibuDb creates a default admin user:
+On first startup, if the users file does not exist yet, ShibuDb will **prompt you to create an admin user** (username + password).
 
-- **Username**: `admin`
-- **Password**: `admin`
-- **Role**: `admin`
-- **Permissions**: Full access to all spaces
+If you want to bootstrap non-interactively, start the server with:
+
+```bash
+shibudb start --admin-user <admin_username> --admin-password <admin_password>
+```
 
 ### Login Process
 
@@ -59,8 +60,8 @@ On first startup, ShibuDb creates a default admin user:
 shibudb connect --port 9090
 
 # You'll be prompted for credentials
-Username: admin
-Password: admin
+Username: <your admin username>
+Password: <your admin password>
 
 # Successful login response
 Login successful.
@@ -304,7 +305,7 @@ SEARCH-TOPK 1.0,2.0,3.0 5
 #### Admin User
 ```bash
 # Admin with full access
-Username: admin
+Username: <admin username>
 Role: admin
 Permissions: None (full access by default)
 
@@ -337,8 +338,8 @@ admin
 #### Password Rotation
 ```bash
 # Regular password updates
-UPDATE-USER-PASSWORD admin
-# Change default admin password monthly
+UPDATE-USER-PASSWORD <admin username>
+# Change admin password periodically
 
 UPDATE-USER-PASSWORD john_doe
 # Change user passwords quarterly
@@ -401,14 +402,13 @@ CREATE-SPACE financial_data --engine key-value
 #### Change Default Credentials
 ```bash
 # Immediately after first login
-UPDATE-USER-PASSWORD admin
-# Change from default 'admin' password
+UPDATE-USER-PASSWORD <admin username>
 ```
 
 #### Monitor Login Attempts
 ```bash
 # Check server logs for authentication failures
-tail -f /usr/local/var/log/shibudb.log | grep "authentication failed"
+tail -f ~/.shibudb/log/shibudb.log | grep "authentication failed"
 ```
 
 ### 5. Network Security
@@ -555,8 +555,8 @@ CREATE-USER recommendation_service_account
 **Solution**:
 ```bash
 # Login as admin
-Username: admin
-Password: admin
+Username: <admin username>
+Password: <admin password>
 
 # Then create users
 CREATE-USER new_user
@@ -603,7 +603,7 @@ GET-USER username
 UPDATE-USER-PASSWORD username
 
 # Check server logs for details
-tail -f /usr/local/var/log/shibudb.log
+tail -f ~/.shibudb/log/shibudb.log
 ```
 
 #### 5. "User not found" Error
@@ -659,20 +659,20 @@ UPDATE-USER-PERMISSIONS user1
 
 ```bash
 # Watch for failed login attempts
-tail -f /usr/local/var/log/shibudb.log | grep "authentication failed"
+tail -f ~/.shibudb/log/shibudb.log | grep "authentication failed"
 
 # Monitor successful logins
-tail -f /usr/local/var/log/shibudb.log | grep "Login successful"
+tail -f ~/.shibudb/log/shibudb.log | grep "Login successful"
 ```
 
 #### Monitor Permission Changes
 
 ```bash
 # Watch for permission updates
-tail -f /usr/local/var/log/shibudb.log | grep "USER_ROLE_UPDATED"
+tail -f ~/.shibudb/log/shibudb.log | grep "USER_ROLE_UPDATED"
 
 # Monitor user creation/deletion
-tail -f /usr/local/var/log/shibudb.log | grep -E "(USER_CREATED|USER_DELETED)"
+tail -f ~/.shibudb/log/shibudb.log | grep -E "(USER_CREATED|USER_DELETED)"
 ```
 
 ### Emergency Procedures
@@ -685,18 +685,13 @@ If admin password is lost:
 # Stop the server
 sudo shibudb stop
 
-# Remove users file to reset to defaults
-sudo rm /usr/local/var/lib/shibudb/users.json
+# Remove the users file under your data directory (adjust if you use --data-dir or XDG)
+rm ~/.shibudb/lib/users.json
 
-# Restart server (creates default admin/admin)
+# Restart server (you will be prompted to create a new admin user, or use --admin-user/--admin-password)
 sudo shibudb start --port 9090
 
-# Login with default credentials
-Username: admin
-Password: admin
-
-# Immediately change password
-UPDATE-USER-PASSWORD admin
+# Login with the new credentials you created
 ```
 
 #### Recover User Data
@@ -705,10 +700,10 @@ If user data is corrupted:
 
 ```bash
 # Check user file integrity
-cat /usr/local/var/lib/shibudb/users.json
+cat ~/.shibudb/lib/users.json
 
 # If corrupted, restore from backup
-sudo cp /backup/users.json /usr/local/var/lib/shibudb/users.json
+cp /backup/users.json ~/.shibudb/lib/users.json
 
 # Restart server
 sudo shibudb stop

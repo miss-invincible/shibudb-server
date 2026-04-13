@@ -52,17 +52,17 @@ CREATE-SPACE users --engine key-value
 # Create with custom name
 CREATE-SPACE product_catalog --engine key-value
 
-# Create with WAL enabled (default, for enhanced durability)
+# Create with WAL enabled (for enhanced durability)
 CREATE-SPACE durable_users --engine key-value --enable-wal
 
-# Create with WAL disabled (for maximum performance)
+# Create with WAL disabled (default; for maximum performance)
 CREATE-SPACE fast_cache --engine key-value --disable-wal
 ```
 
 **Parameters:**
 - `--engine key-value`: Specifies key-value engine type
-- `--enable-wal`: Enable Write-Ahead Logging for enhanced durability (default for key-value spaces)
-- `--disable-wal`: Disable Write-Ahead Logging for maximum performance
+- `--enable-wal`: Enable Write-Ahead Logging for enhanced durability
+- `--disable-wal`: Disable Write-Ahead Logging (default)
 
 **Note**: Only admin users can create spaces.
 
@@ -95,11 +95,10 @@ USE users
 
 Key-value spaces support configurable Write-Ahead Logging (WAL) to balance performance and durability:
 
-#### Default Behavior (WAL Enabled)
-- **Performance**: Slightly slower due to WAL overhead
-- **Durability**: Enhanced durability with full crash recovery
-- **Recovery**: Complete recovery from crashes and unexpected shutdowns
-- **Use Case**: Traditional database workloads requiring strong durability
+#### Default Behavior (WAL Disabled)
+- **Performance**: Maximum write performance
+- **Durability**: No WAL-based crash recovery
+- **Use Case**: Development, caches, and workloads where WAL isn’t required
 
 #### WAL Disabled
 - **Performance**: Maximum write performance (~20-30% faster)
@@ -110,19 +109,19 @@ Key-value spaces support configurable Write-Ahead Logging (WAL) to balance perfo
 #### WAL Configuration Examples
 
 ```bash
-# Create key-value space with WAL enabled (enhanced durability, default)
+# Create key-value space with WAL enabled (enhanced durability)
 CREATE-SPACE production_data --engine key-value --enable-wal
 
 # Create key-value space with WAL disabled (maximum performance)
 CREATE-SPACE cache_data --engine key-value --disable-wal
 
-# Create key-value space with WAL enabled (explicit, same as default)
-CREATE-SPACE durable_data --engine key-value
+# Create key-value space with WAL disabled (explicit, same as default)
+CREATE-SPACE durable_data --engine key-value --disable-wal
 ```
 
 #### When to Use WAL
 
-**Use WAL Enabled (`--enable-wal` or default) for:**
+**Use WAL Enabled (`--enable-wal`) for:**
 - Production systems with critical data
 - User data, session information, and configuration
 - Applications requiring strong durability guarantees
@@ -545,7 +544,7 @@ UPDATE-USER-PERMISSIONS username
 shibudb manager --username admin --password admin stats
 
 # Monitor server logs
-tail -f /usr/local/var/log/shibudb.log
+tail -f ~/.shibudb/log/shibudb.log
 
 # Consider key design optimization
 # Use shorter keys and better organization
@@ -557,17 +556,17 @@ tail -f /usr/local/var/log/shibudb.log
 
 ```bash
 # Monitor disk usage
-du -sh /usr/local/var/lib/shibudb/
+du -sh ~/.shibudb/lib/
 
 # Check specific space files
-ls -la /usr/local/var/lib/shibudb/
+ls -la ~/.shibudb/lib/
 ```
 
 #### Monitor Operations
 
 ```bash
 # Watch server logs for performance issues
-tail -f /usr/local/var/log/shibudb.log | grep -E "(slow|performance|timeout)"
+tail -f ~/.shibudb/log/shibudb.log | grep -E "(slow|performance|timeout)"
 
 # Check connection usage
 shibudb manager --username admin --password admin stats
@@ -585,17 +584,17 @@ sudo shibudb stop
 sudo shibudb start --port 9090
 
 # Check logs for recovery messages
-tail -f /usr/local/var/log/shibudb.log
+tail -f ~/.shibudb/log/shibudb.log
 ```
 
-**Note**: WAL recovery is only available if the space was created with `--enable-wal` (default for key-value spaces). Spaces created with `--disable-wal` have limited recovery capabilities.
+**Note**: WAL recovery is only available if the space was created with `--enable-wal`. Spaces created with WAL disabled do not replay a WAL on restart.
 
 #### Manual Data Export
 
 ```bash
-# Data is stored in files under /usr/local/var/lib/shibudb/
-# Each space has its own directory with data files
-ls -la /usr/local/var/lib/shibudb/
+# Data is stored under your data directory (default: ~/.shibudb).
+# Each space has its own directory with data files.
+ls -la ~/.shibudb/lib/
 ```
 
 ## Next Steps

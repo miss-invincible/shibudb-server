@@ -161,6 +161,13 @@ shibudb manager --username admin --password admin decrease 200
 # Check server health
 shibudb manager --username admin --password admin health
 
+# Update space storage settings (admin-only)
+# NOTE: Segment settings apply to Flat/HNSW segmented storage; training indexes (IVF/PQ) ignore/reject these settings.
+shibudb manager --username admin --password admin update-space-settings \
+  --segment-rollover-bytes 52428800 \
+  --max-segments-before-merge 20 \
+  my_space
+
 # Example: server started with --port 9090 --management-port 19090
 shibudb manager --port 19090 --username admin --password admin status
 ```
@@ -185,11 +192,13 @@ kill -USR2 <server_pid>
 type ConnectionManager struct {
     maxConnections    int32
     activeConnections int32
+    busyConnections   int32
     semaphore         chan struct{}
     connections       sync.Map
     mu                sync.RWMutex
     limitUpdateChan   chan int32
     shutdownChan      chan struct{}
+    dataDir           string
 }
 ```
 
@@ -381,7 +390,7 @@ EOF
 - **Network Access**: Management API runs on separate port
 - **Bearer Authentication**: All management API endpoints require `Authorization: Bearer <token>`
 - **Token Lifecycle**: Generate/list/delete tokens via admin-only manager commands
-- **Local Access**: Management API only accessible from localhost
+- **Bind Address**: The management server listens on the configured port (default 5444). Restrict exposure using firewall rules, security groups, or SSH tunneling.
 
 ### Recommended Security Measures
 

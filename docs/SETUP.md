@@ -82,17 +82,29 @@ brew link shibudb
 
 ## Initial Configuration
 
-### 1. Create Required Directories
+### 1. Data directory + files
 
+ShibuDb stores runtime files under a single **data directory root**.
+
+- If `XDG_DATA_HOME` is set, the default is: `$XDG_DATA_HOME/shibudb`
+- Otherwise the default is: `~/.shibudb`
+
+You can override it with `shibudb start --data-dir <path>`.
+
+Under the data directory root, ShibuDb creates:
 
 ```bash
-ShibuDb automatically creates the following directory structure:
-~/.shibudb/lib/             # Database + config files
-~/.shibudb/log/shibudb.log  # Log file
-~/.shibudb/run/shibudb.pid  # PID file
+<data-dir>/
+  lib/                      # DB files + config files
+    users.json              # users + password hashes
+    management_tokens.json  # stored management bearer tokens
+  log/
+    shibudb.log             # server stdout/stderr (when started via `shibudb start`)
+  run/
+    shibudb.pid             # PID file (when started via `shibudb start`)
 ```
 
-### 1. Configure Connection Limits
+### 2. Configure connection limits
 
 By default, ShibuDb allows up to 1000 concurrent connections. You can modify this:
 
@@ -110,15 +122,18 @@ shibudb start --max-connections 2000 --port 9090
 shibudb manager --username admin --password admin limit 2000
 ```
 
+Note: ShibuDb persists the connection limit to `connection_limit.json` under your **data directory root**. If that file exists, it can override the `--max-connections` value on subsequent starts.
+
 ## First Steps
 
 ### 1. Start the Server
 
 ```bash
-# Start with defaults (listen port 4444, 1000 connections); first start will prompt for admin credentials
+# Start with defaults (listen port 4444, 1000 connections).
+# If no users exist yet, the server will prompt you to create an admin user.
 shibudb start
 
-# First start with admin credentials (non-interactive)
+# First start with admin credentials (non-interactive bootstrap)
 shibudb start --admin-user admin --admin-password admin
 
 # Custom listen port (e.g. 9090)
@@ -179,7 +194,7 @@ RANGE-SEARCH 1.0,2.0,3.0,4.0 0.5
 # Check if server is running
 ps aux | grep shibudb
 
-# Check server logs
+# Check server logs (adjust path if you use --data-dir or XDG)
 tail -f ~/.shibudb/log/shibudb.log
 ```
 
@@ -212,7 +227,7 @@ shibudb manager --username admin --password admin generate-token
 # Run unit tests
 make test
 
-# Run E2E tests (requires server running on port 4444 with admin credentials as admin:admin, can be started make start-local-server)
+# Run E2E tests (requires server running; credentials depend on what you bootstrapped)
 make e2e-test
 ```
 
@@ -281,10 +296,10 @@ sudo ufw allow 5444
 
 **Solution**:
 ```bash
-# Reset admin password by recreating users file
+# If you need to reset credentials, remove the users file in the data dir.
+# On next start, ShibuDb will prompt you to create a new admin user (or use --admin-user/--admin-password).
 rm ~/.shibudb/lib/users.json
-sudo shibudb start
-# Default credentials will be recreated: admin/admin
+shibudb start
 ```
 
 ### Log Analysis

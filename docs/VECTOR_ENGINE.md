@@ -774,22 +774,22 @@ INSERT-VECTOR 2 1.1,2.1,3.1,4.1,5.1
 
 ### 2. Vector ID Management
 
-#### Use Meaningful IDs
-```bash
-# Good: Descriptive IDs
-INSERT-VECTOR user_123_profile 0.1,0.2,0.3,0.4,0.5
-INSERT-VECTOR product_456_image 0.6,0.7,0.8,0.9,1.0
+#### Numeric IDs only
 
-# Avoid: Random IDs
-INSERT-VECTOR abc123 0.1,0.2,0.3,0.4,0.5
+Vector IDs must be **numeric** (the server parses the ID as an `int64`). If you need to associate vectors with application IDs (like `user:123`), keep that mapping in your application (or store it separately in a key-value space).
+
+#### Use Meaningful (numeric) IDs
+```bash
+# Good: stable numeric IDs
+INSERT-VECTOR 123 0.1,0.2,0.3,0.4,0.5
+INSERT-VECTOR 456 0.6,0.7,0.8,0.9,1.0
 ```
 
-#### Consistent ID Patterns
+#### Consistent numeric ranges
 ```bash
-# Use consistent naming patterns
-INSERT-VECTOR user:123:embedding 0.1,0.2,0.3,0.4,0.5
-INSERT-VECTOR user:456:embedding 0.6,0.7,0.8,0.9,1.0
-INSERT-VECTOR product:789:embedding 1.1,1.2,1.3,1.4,1.5
+# Example: reserve ranges by entity type
+INSERT-VECTOR 100000123 0.1,0.2,0.3,0.4,0.5   # user 123
+INSERT-VECTOR 200000789 1.1,1.2,1.3,1.4,1.5   # product 789
 ```
 
 ### 3. Batch Operations
@@ -952,9 +952,9 @@ CREATE-SPACE face_embeddings --engine vector --dimension 128 --index-type IVF32 
 USE face_embeddings
 
 # Store face embeddings
-INSERT-VECTOR person:john:face:1 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8
-INSERT-VECTOR person:john:face:2 0.11,0.21,0.31,0.41,0.51,0.61,0.71,0.81
-INSERT-VECTOR person:jane:face:1 0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2
+INSERT-VECTOR 1001 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8
+INSERT-VECTOR 1002 0.11,0.21,0.31,0.41,0.51,0.61,0.71,0.81
+INSERT-VECTOR 2001 0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2
 
 # Face recognition
 SEARCH-TOPK 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8 5
@@ -1045,17 +1045,17 @@ RANGE-SEARCH 1.0,2.0,3.0,4.0,5.0 0.5  # Instead of 10.0
 
 ```bash
 # Monitor disk usage
-du -sh /usr/local/var/lib/shibudb/
+du -sh ~/.shibudb/lib/
 
 # Check specific vector space files
-ls -la /usr/local/var/lib/shibudb/
+ls -la ~/.shibudb/lib/
 ```
 
 #### Monitor Search Performance
 
 ```bash
 # Watch server logs for performance issues
-tail -f /usr/local/var/log/shibudb.log | grep -E "(slow|performance|timeout)"
+tail -f ~/.shibudb/log/shibudb.log | grep -E "(slow|performance|timeout)"
 
 # Check connection usage
 shibudb manager --username admin --password admin stats
@@ -1073,7 +1073,7 @@ sudo shibudb stop
 sudo shibudb start --port 9090
 
 # Check logs for recovery messages
-tail -f /usr/local/var/log/shibudb.log
+tail -f ~/.shibudb/log/shibudb.log
 ```
 
 **Note**: WAL recovery is only available if the space was created with `--enable-wal`. Spaces created with WAL disabled have limited recovery capabilities.
