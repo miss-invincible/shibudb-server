@@ -5,6 +5,7 @@
 - [Prerequisites](#prerequisites)
 - [Installation Methods](#installation-methods)
   - [From Pre-built Packages](#from-pre-built-packages)
+  - [Linux Source Installer](#linux-source-installer)
   - [From brew](#from-brew)
 - [First Steps](#first-steps)
 - [Verification](#verification)
@@ -24,6 +25,10 @@
 
 ### From Pre-built Packages
 
+Pre-built packages are the fastest option for supported current Linux
+distributions and macOS. If a Linux package fails because the distribution is
+older than the package build baseline, use the [Linux Source Installer](#linux-source-installer).
+
 #### macOS (Apple Silicon)
 
 1. Download the `.pkg` file for your architecture
@@ -35,34 +40,81 @@ sudo installer -pkg shibudb-{version}-apple_silicon.pkg -target /
 
 #### Linux (Debian/Ubuntu)
 
+Recommended for current Debian/Ubuntu releases such as Debian 12 and Ubuntu
+22.04 or newer.
+
 **AMD64:**
 ```bash
 # Download and install
-wget https://github.com/shibudb.org/shibudb-server/releases/download/v{version}/shibudb_{version}_amd64.deb
+wget https://github.com/shibudb-org/shibudb-server/releases/download/v{version}/shibudb_{version}_amd64.deb
 sudo dpkg -i shibudb_{version}_amd64.deb
 ```
 
 **ARM64:**
 ```bash
 # Download and install
-wget https://github.com/shibudb.org/shibudb-server/releases/download/v{version}/shibudb_{version}_arm64.deb
+wget https://github.com/shibudb-org/shibudb-server/releases/download/v{version}/shibudb_{version}_arm64.deb
 sudo dpkg -i shibudb_{version}_arm64.deb
 ```
 
 #### Linux (RHEL/CentOS/Fedora)
 
+Recommended for current RPM-based distributions such as Rocky/AlmaLinux 9,
+Amazon Linux 2023, and Fedora.
+
 **AMD64:**
 ```bash
 # Download and install
-wget https://github.com/shibudb.org/shibudb-server/releases/download/v{version}/shibudb-{version}-1.x86_64.rpm
+wget https://github.com/shibudb-org/shibudb-server/releases/download/v{version}/shibudb-{version}-1.x86_64.rpm
 sudo rpm -i shibudb-{version}-1.x86_64.rpm
 ```
 
 **ARM64:**
 ```bash
 # Download and install
-wget https://github.com/shibudb.org/shibudb-server/releases/download/v{version}/shibudb-{version}-1.aarch64.rpm
+wget https://github.com/shibudb-org/shibudb-server/releases/download/v{version}/shibudb-{version}-1.aarch64.rpm
 sudo rpm -i shibudb-{version}-1.aarch64.rpm
+```
+
+### Linux Source Installer
+
+Use the source installer for older Linux distributions, minimal server images,
+or any Linux system where the pre-built package is not compatible. It builds
+the `shibudb` binary on the target machine, while still using the bundled FAISS
+libraries from the ShibuDB source tree.
+
+The installer supports Linux `amd64` and `arm64`. It can install dependencies
+through `apt`, `dnf`, or `yum`, and downloads a temporary Go toolchain if Go
+1.23 or later is not already installed.
+
+```bash
+# Install the latest release
+curl -fsSL https://raw.githubusercontent.com/shibudb-org/shibudb-server/main/scripts/install-linux.sh | bash
+
+# Install a specific release
+curl -fsSL https://raw.githubusercontent.com/shibudb-org/shibudb-server/main/scripts/install-linux.sh | bash -s -- --version {version}
+```
+
+The source installer installs:
+
+```bash
+/usr/local/bin/shibudb
+/usr/local/lib/libfaiss.so
+/usr/local/lib/libfaiss_c.so
+/usr/local/share/shibudb/
+```
+
+Optional flags:
+
+```bash
+# Install to a custom prefix
+curl -fsSL https://raw.githubusercontent.com/shibudb-org/shibudb-server/main/scripts/install-linux.sh | bash -s -- --prefix /opt/shibudb
+
+# Build from an existing checkout
+./scripts/install-linux.sh --source /path/to/shibudb-server
+
+# If dependencies are already installed
+./scripts/install-linux.sh --skip-deps
 ```
 
 ### From brew
@@ -366,6 +418,6 @@ After successful setup, explore these guides:
 If you encounter issues not covered in this guide:
 
 1. Check the [Troubleshooting Guide](TROUBLESHOOTING.md)
-2. Review [GitHub Issues](https://github.com/shibudb.org/shibudb-server/issues)
-3. Join [GitHub Discussions](https://github.com/shibudb.org/shibudb-server/discussions)
+2. Review [GitHub Issues](https://github.com/shibudb-org/shibudb-server/issues)
+3. Join [GitHub Discussions](https://github.com/shibudb-org/shibudb-server/discussions)
 4. Check the [Architecture Documentation](ARCHITECTURE.md) for technical details 

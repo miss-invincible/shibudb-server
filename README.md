@@ -2,7 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.23.0-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-AGPL%203.0-green.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platforms-Linux%20%7C%20macOS-blue.svg)](https://github.com/shibudb.org/shibudb-server)
+[![Platforms](https://img.shields.io/badge/Platforms-Linux%20%7C%20macOS-blue.svg)](https://github.com/shibudb-org/shibudb-server)
 
 ShibuDb is a lightweight database system with vector search capabilities powered by FAISS. It provides high-performance storage and retrieval with support for both traditional key-value operations and advanced vector similarity search.
 
@@ -22,8 +22,8 @@ ShibuDb is a lightweight database system with vector search capabilities powered
 
 ```bash
 # From source
-git clone https://github.com/shibudb.org/shibudb-server.git
-cd ShibuDb
+git clone https://github.com/shibudb-org/shibudb-server.git
+cd shibudb-server
 
 # Start the local server on port 4444.
 # This dev script bootstraps an admin user as admin:admin (see scripts/start-local-server.sh).
@@ -164,6 +164,10 @@ brew link shibudb
 
 ### From Pre-built Packages
 
+Use pre-built packages for current Linux distributions. For older distributions,
+use the source installer below so the ShibuDB binary is compiled against the
+local system libraries.
+
 **macOS (Apple Silicon):**
 ```bash
 sudo installer -pkg shibudb-{version}-apple_silicon.pkg -target /
@@ -186,6 +190,26 @@ sudo rpm -i shibudb-{version}-1.x86_64.rpm
 # ARM64
 sudo rpm -i shibudb-{version}-1.aarch64.rpm
 ```
+
+### Linux Source Installer
+
+Use this option on older Linux distributions or when a pre-built package is not
+compatible with your system. The installer downloads the selected ShibuDB source
+release, uses the bundled FAISS libraries from `resources/`, builds `shibudb`
+locally, installs the binary under `/usr/local/bin`, installs FAISS libraries
+under `/usr/local/lib`, and runs `ldconfig`.
+
+```bash
+# Install the latest release
+curl -fsSL https://raw.githubusercontent.com/shibudb-org/shibudb-server/main/scripts/install-linux.sh | bash
+
+# Install a specific release
+curl -fsSL https://raw.githubusercontent.com/shibudb-org/shibudb-server/main/scripts/install-linux.sh | bash -s -- --version {version}
+```
+
+The source installer supports Linux `amd64` and `arm64`. It installs build
+dependencies with `apt`, `dnf`, or `yum`, and downloads a temporary Go toolchain
+if Go 1.23 or later is not already available.
 
 ## 🎯 Use Cases
 
@@ -282,9 +306,9 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 
 ## 🆘 Support
 
-- **Documentation**: [Wiki](https://github.com/shibudb.org/shibudb-server/wiki)
-- **Issues**: [GitHub Issues](https://github.com/shibudb.org/shibudb-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/shibudb.org/shibudb-server/discussions)
+- **Documentation**: [Wiki](https://github.com/shibudb-org/shibudb-server/wiki)
+- **Issues**: [GitHub Issues](https://github.com/shibudb-org/shibudb-server/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/shibudb-org/shibudb-server/discussions)
 
 ## 🙏 Acknowledgments
 
