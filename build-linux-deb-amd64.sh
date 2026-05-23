@@ -103,8 +103,8 @@ cat > "$DEB_ROOT/DEBIAN/postinst" <<EOF
 EOF
 chmod 755 "$DEB_ROOT/DEBIAN/postinst"
 
-# Build .deb
-dpkg-deb --build "$DEB_ROOT" "$TEMP_BUILD_DIR/${APP_NAME}_${VERSION}_${ARCH}.deb"
+# Build .deb with xz compression for compatibility with older dpkg versions.
+dpkg-deb -Zxz --build "$DEB_ROOT" "$TEMP_BUILD_DIR/${APP_NAME}_${VERSION}_${ARCH}.deb"
 
 # === Organize final installer ===
 echo "📁 Organizing installer..."

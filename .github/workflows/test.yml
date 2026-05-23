@@ -48,7 +48,12 @@ jobs:
 
     - name: Stop test server
       if: always()
-      run: ./scripts/stop-test-server.sh
+      run: |
+        if [ -f ./scripts/stop-test-server.sh ]; then
+          bash ./scripts/stop-test-server.sh
+        else
+          echo "stop-test-server.sh not found; skipping cleanup"
+        fi
 
     - name: Upload test results
       if: always()

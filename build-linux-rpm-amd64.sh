@@ -75,6 +75,10 @@ mkdir -p "$PKG_ROOT/usr/local/lib"
 cp resources/lib/linux/amd64/libfaiss.so "$PKG_ROOT/usr/local/lib/"
 cp resources/lib/linux/amd64/libfaiss_c.so "$PKG_ROOT/usr/local/lib/"
 
+# Ensure RPM-based distros search /usr/local/lib for bundled FAISS libraries.
+mkdir -p "$PKG_ROOT/etc/ld.so.conf.d"
+echo "/usr/local/lib" > "$PKG_ROOT/etc/ld.so.conf.d/$APP_NAME.conf"
+
 # Copy resources and docs
 mkdir -p "$PKG_ROOT/usr/local/share/$APP_NAME"
 # Copy resources but exclude ARM64 libraries to prevent strip errors
@@ -115,7 +119,7 @@ ShibuDB is a lightweight database optimized for high-performance storage and FAI
 %setup -q
 
 %install
-cp -a usr %{buildroot}/
+cp -a usr etc %{buildroot}/
 
 %files
 /usr/local/bin/$APP_NAME
@@ -124,11 +128,15 @@ cp -a usr %{buildroot}/
 /usr/local/var/log/$APP_NAME
 /usr/local/var/lib/$APP_NAME
 /usr/local/share/$APP_NAME
+/etc/ld.so.conf.d/$APP_NAME.conf
 
 %license LICENSE
 %doc README.md
 
 %post
+/sbin/ldconfig
+
+%postun
 /sbin/ldconfig
 
 %changelog
