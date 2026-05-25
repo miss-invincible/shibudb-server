@@ -1,4 +1,4 @@
-name: Linux Package Install Tests
+name: test-integration-linux-targets
 
 on:
   push:
@@ -129,22 +129,48 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y ca-certificates libc6 libstdc++6 libgomp1 libopenblas0 bash
+          apt-get install -y ca-certificates libc6 libstdc++6 libgomp1 libopenblas0 bash curl tar gzip
           apt-get install -y ./packages/*.deb
 
-      - name: Smoke test ShibuDB
+      - name: Smoke and integration test ShibuDB
         run: |
           set -eu
+
+          install_go() {
+            go_version="1.23.7"
+            case "$(uname -m)" in
+              x86_64) go_arch="amd64" ;;
+              aarch64) go_arch="arm64" ;;
+              *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+            esac
+            curl -fsSL "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz" -o /tmp/go.tar.gz
+            rm -rf /tmp/go
+            mkdir -p /tmp/go
+            tar -C /tmp/go --strip-components=1 -xzf /tmp/go.tar.gz
+            export PATH="/tmp/go/bin:$PATH"
+            go version
+          }
+
+          download_source() {
+            rm -rf /tmp/shibudb-source
+            mkdir -p /tmp/shibudb-source
+            curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/${GITHUB_SHA}.tar.gz" -o /tmp/shibudb-source.tar.gz
+            tar -C /tmp/shibudb-source --strip-components=1 -xzf /tmp/shibudb-source.tar.gz
+          }
+
+          install_go
+          download_source
+
           shibudb --version
           ldd /usr/local/bin/shibudb
 
           mkdir -p /tmp/shibudb-data
-          shibudb start \
+          shibudb run \
             --data-dir /tmp/shibudb-data \
             --admin-user admin \
             --admin-password admin \
-            --port 9090 \
-            --management-port 9091 \
+            --port 4444 \
+            --management-port 5444 \
             > /tmp/shibudb.log 2>&1 &
           server_pid=$!
 
@@ -155,8 +181,10 @@ jobs:
           trap cleanup EXIT
 
           for _ in $(seq 1 30); do
-            if timeout 1 bash -c '</dev/tcp/127.0.0.1/9090' 2>/dev/null; then
-              printf 'exit\n' | shibudb connect --username admin --password admin --port 9090
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/4444' 2>/dev/null; then
+              printf 'exit\n' | shibudb connect --username admin --password admin --port 4444
+              cd /tmp/shibudb-source
+              go test -v -buildvcs=false ./E2ETests
               exit 0
             fi
             sleep 1
@@ -231,26 +259,55 @@ jobs:
           set -eu
 
           if command -v dnf >/dev/null 2>&1; then
-            dnf install -y libstdc++ libgomp openblas bash
+            dnf install -y libstdc++ libgomp openblas bash tar gzip
+            if ! command -v curl >/dev/null 2>&1; then
+              dnf install -y curl || dnf install -y --allowerasing curl
+            fi
             dnf install -y ./packages/*.rpm
           else
-            yum install -y libstdc++ libgomp openblas bash
+            yum install -y libstdc++ libgomp openblas bash tar gzip curl
             yum install -y ./packages/*.rpm
           fi
 
-      - name: Smoke test ShibuDB
+      - name: Smoke and integration test ShibuDB
         run: |
           set -eu
+
+          install_go() {
+            go_version="1.23.7"
+            case "$(uname -m)" in
+              x86_64) go_arch="amd64" ;;
+              aarch64) go_arch="arm64" ;;
+              *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+            esac
+            curl -fsSL "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz" -o /tmp/go.tar.gz
+            rm -rf /tmp/go
+            mkdir -p /tmp/go
+            tar -C /tmp/go --strip-components=1 -xzf /tmp/go.tar.gz
+            export PATH="/tmp/go/bin:$PATH"
+            go version
+          }
+
+          download_source() {
+            rm -rf /tmp/shibudb-source
+            mkdir -p /tmp/shibudb-source
+            curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/${GITHUB_SHA}.tar.gz" -o /tmp/shibudb-source.tar.gz
+            tar -C /tmp/shibudb-source --strip-components=1 -xzf /tmp/shibudb-source.tar.gz
+          }
+
+          install_go
+          download_source
+
           shibudb --version
           ldd /usr/local/bin/shibudb
 
           mkdir -p /tmp/shibudb-data
-          shibudb start \
+          shibudb run \
             --data-dir /tmp/shibudb-data \
             --admin-user admin \
             --admin-password admin \
-            --port 9090 \
-            --management-port 9091 \
+            --port 4444 \
+            --management-port 5444 \
             > /tmp/shibudb.log 2>&1 &
           server_pid=$!
 
@@ -261,8 +318,10 @@ jobs:
           trap cleanup EXIT
 
           for _ in $(seq 1 30); do
-            if timeout 1 bash -c '</dev/tcp/127.0.0.1/9090' 2>/dev/null; then
-              printf 'exit\n' | shibudb connect --username admin --password admin --port 9090
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/4444' 2>/dev/null; then
+              printf 'exit\n' | shibudb connect --username admin --password admin --port 4444
+              cd /tmp/shibudb-source
+              go test -v -buildvcs=false ./E2ETests
               exit 0
             fi
             sleep 1
@@ -371,7 +430,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install and smoke test from source
+      - name: Install, smoke, and integration test from source
         shell: bash
         run: |
           set -euo pipefail
@@ -383,19 +442,35 @@ jobs:
             bash -lc '
               set -euo pipefail
 
+              install_go() {
+                go_version="1.23.7"
+                case "$(uname -m)" in
+                  x86_64) go_arch="amd64" ;;
+                  aarch64) go_arch="arm64" ;;
+                  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+                esac
+                curl -fsSL "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz" -o /tmp/go.tar.gz
+                rm -rf /tmp/go
+                mkdir -p /tmp/go
+                tar -C /tmp/go --strip-components=1 -xzf /tmp/go.tar.gz
+                export PATH="/tmp/go/bin:$PATH"
+                go version
+              }
+
               chmod +x scripts/install-linux.sh
               ./scripts/install-linux.sh --source /work
+              install_go
 
               shibudb --version
               ldd /usr/local/bin/shibudb
 
               mkdir -p /tmp/shibudb-data
-              shibudb start \
+              shibudb run \
                 --data-dir /tmp/shibudb-data \
                 --admin-user admin \
                 --admin-password admin \
-                --port 9090 \
-                --management-port 9091 \
+                --port 4444 \
+                --management-port 5444 \
                 > /tmp/shibudb.log 2>&1 &
               server_pid=$!
 
@@ -406,8 +481,9 @@ jobs:
               trap cleanup EXIT
 
               for _ in $(seq 1 30); do
-                if timeout 1 bash -c "</dev/tcp/127.0.0.1/9090" 2>/dev/null; then
-                  printf "exit\n" | shibudb connect --username admin --password admin --port 9090
+                if timeout 1 bash -c "</dev/tcp/127.0.0.1/4444" 2>/dev/null; then
+                  printf "exit\n" | shibudb connect --username admin --password admin --port 4444
+                  go test -v -buildvcs=false ./E2ETests
                   exit 0
                 fi
                 sleep 1
