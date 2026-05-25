@@ -3,6 +3,8 @@ name: test-integration-linux-targets
 on:
   push:
     branches: [main]
+    paths:
+      - CHANGELOG.txt
   workflow_dispatch:
 
 permissions:

@@ -1,19 +1,22 @@
 name: Release Builds
 
 on:
-  push:
+  workflow_run:
+    workflows: ["test-integration-linux-targets"]
+    types: [completed]
     branches: [main]
-    paths:
-      - CHANGELOG.txt
   workflow_dispatch:
 
 jobs:
   tests:
     name: Verify Tests
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -74,6 +77,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Determine release version
         id: version
