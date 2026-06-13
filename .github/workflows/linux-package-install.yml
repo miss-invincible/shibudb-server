@@ -132,6 +132,8 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
           apt-get install -y ca-certificates libc6 libstdc++6 libgomp1 libopenblas0 bash curl tar gzip
+          # gcc/g++ are required to build the CGO-based E2E test binary (go-faiss).
+          apt-get install -y gcc g++
           apt-get install -y ./packages/*.deb
 
       - name: Smoke and integration test ShibuDB
@@ -185,8 +187,7 @@ jobs:
           for _ in $(seq 1 30); do
             if timeout 1 bash -c '</dev/tcp/127.0.0.1/4444' 2>/dev/null; then
               printf 'exit\n' | shibudb connect --username admin --password admin --port 4444
-              cd /tmp/shibudb-source
-              go test -v -buildvcs=false ./E2ETests
+              bash /tmp/shibudb-source/scripts/run-e2e-installed.sh /tmp/shibudb-source
               exit 0
             fi
             sleep 1
@@ -260,14 +261,15 @@ jobs:
         run: |
           set -eu
 
+          # gcc/gcc-c++ are required to build the CGO-based E2E test binary (go-faiss).
           if command -v dnf >/dev/null 2>&1; then
-            dnf install -y libstdc++ libgomp openblas bash tar gzip
+            dnf install -y gcc gcc-c++ libstdc++ libgomp openblas bash tar gzip
             if ! command -v curl >/dev/null 2>&1; then
               dnf install -y curl || dnf install -y --allowerasing curl
             fi
             dnf install -y ./packages/*.rpm
           else
-            yum install -y libstdc++ libgomp openblas bash tar gzip curl
+            yum install -y gcc gcc-c++ libstdc++ libgomp openblas bash tar gzip curl
             yum install -y ./packages/*.rpm
           fi
 
@@ -322,8 +324,7 @@ jobs:
           for _ in $(seq 1 30); do
             if timeout 1 bash -c '</dev/tcp/127.0.0.1/4444' 2>/dev/null; then
               printf 'exit\n' | shibudb connect --username admin --password admin --port 4444
-              cd /tmp/shibudb-source
-              go test -v -buildvcs=false ./E2ETests
+              bash /tmp/shibudb-source/scripts/run-e2e-installed.sh /tmp/shibudb-source
               exit 0
             fi
             sleep 1
@@ -485,7 +486,7 @@ jobs:
               for _ in $(seq 1 30); do
                 if timeout 1 bash -c "</dev/tcp/127.0.0.1/4444" 2>/dev/null; then
                   printf "exit\n" | shibudb connect --username admin --password admin --port 4444
-                  go test -v -buildvcs=false ./E2ETests
+                  bash scripts/run-e2e-installed.sh /work
                   exit 0
                 fi
                 sleep 1
