@@ -176,7 +176,7 @@ func (e *FlatMetaVectorEngine) RemoveVector(id int64) error {
 	if e.wal != nil {
 		key := make([]byte, 8)
 		binary.LittleEndian.PutUint64(key, uint64(id))
-		if err := e.wal.WriteEntry(string(key), ""); err != nil {
+		if err := e.wal.WriteDelete(string(key)); err != nil {
 			return err
 		}
 	}
@@ -714,12 +714,12 @@ func (e *FlatMetaVectorEngine) replayWAL() error {
 		return nil
 	}
 	for _, entry := range records {
-		keyBytes := []byte(entry[0])
+		keyBytes := []byte(entry.Key)
 		if len(keyBytes) != 8 {
 			return fmt.Errorf("invalid WAL key length: expected 8, got %d", len(keyBytes))
 		}
 		id := int64(binary.LittleEndian.Uint64(keyBytes))
-		if len(entry[1]) == 0 {
+		if entry.Flag == wal.EntryDeleted {
 			e.lock.Lock()
 			_, existed := e.metadata[id]
 			e.indexRemoveLocked(id)
@@ -729,7 +729,7 @@ func (e *FlatMetaVectorEngine) replayWAL() error {
 			}
 			continue
 		}
-		metaBytes, vec, err := decodeFlatMetaWALValue([]byte(entry[1]), e.dim)
+		metaBytes, vec, err := decodeFlatMetaWALValue([]byte(entry.Value), e.dim)
 		if err != nil {
 			return fmt.Errorf("decode WAL value for id %d: %w", id, err)
 		}
